@@ -7,12 +7,12 @@ from scipy.optimize import minimize
 def gauss(x, mean, sigma):
     return 1 / sigma / (2*np.pi)**0.5 * np.exp(-0.5*((x-mean)/sigma)**2)
 
-def forward_op(true_intensity,true_doppler,true_linewidth):
+def forward_op(true_intensity,true_doppler,true_linewidth, spectral_orders):
     aa, bb = true_intensity.shape
-    out = np.zeros((len(a_list)+1,)+(aa,bb))
+    out = np.zeros((len(spectral_orders)+1,)+(aa,bb))
     out[0] = true_intensity.copy()
     # assume columns of detector are independent
-    for z,a in enumerate(a_list):
+    for z,a in enumerate(spectral_orders):
         for col in range(bb):
             for row in range(aa):
                 out[z+1,:,col] += true_intensity[row,col] * gauss(
@@ -36,8 +36,8 @@ if __name__ == '__main__':
     # true_linewidth = true_intensity.copy() * 5
     # true_intensity = np.zeros((aa,bb))
     # true_intensity[5] = 1
-    a_list=(-1,1)
-    meas = forward_op(true_intensity, true_doppler, true_linewidth)
+    spectral_orders=(-1,1)
+    meas = forward_op(true_intensity, true_doppler, true_linewidth, spectral_orders)
     # amo = np.zeros((aa,bb)) + 0.05
     # x0 = np.stack( ( meas[0], amo, amo ), axis=0 ).flatten()
     # recon = minimize(obj_ls, x0, args=(meas,), method='Nelder-Mead',
