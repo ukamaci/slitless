@@ -15,6 +15,7 @@ setup(
         "matplotlib",
         "numpy",
         "scikit-image",
+        "ipython-cells",
         "scipy"
     ],
     classifiers=[
