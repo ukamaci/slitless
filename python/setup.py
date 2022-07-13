@@ -16,7 +16,9 @@ setup(
         "numpy",
         "scikit-image",
         "ipython-cells",
-        "scipy"
+        "scipy",
+        "pqdm",
+        "eispac"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
