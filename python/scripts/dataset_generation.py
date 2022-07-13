@@ -99,12 +99,11 @@ if __name__ == '__main__':
     trainsize = 10000
     valsize = 2000
     testsize = 1000
-    cumsize = 100
 
-    numsize = cumsize
+    numsize = valsize
     file_path = '/home/kamo/resources/slitless/data/datasets/dset2_2022_07_03_102flowers_64_64_patches/'
     path_save0 = '/home/kamo/resources/slitless/data/datasets/dset3_2022_07_04_102flowers_meas_params/'
-    path_save = path_save0+'cum/'
+    path_save = path_save0+'val/'
 
     args = np.arange(numsize)
     pqdm(args, fwd_meas, n_jobs=32)
