@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import datetime
 
-from data_loader import BasicDataset
+from slitless.data_loader import BasicDataset
 from slitless.networks.unet import UNet
 import numpy as np
 import matplotlib.pyplot as plt
