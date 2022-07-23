@@ -18,6 +18,9 @@ setup(
         "ipython-cells",
         "scipy",
         "pqdm",
+        "tqdm",
+        "seaborn",
+        "torch",
         "eispac"
     ],
     classifiers=[
