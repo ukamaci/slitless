@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 from skimage.transform import resize
 from skimage.data import camera, shepp_logan_phantom, cell
@@ -6,6 +7,9 @@ from scipy.optimize import minimize
 
 def gauss(x, mean, sigma):
     return 1 / sigma / (2*np.pi)**0.5 * np.exp(-0.5*((x-mean)/sigma)**2)
+
+def gauss_torch(x, mean, sigma):
+    return 1 / sigma / (2*np.pi)**0.5 * torch.exp(-0.5*((x-mean)/sigma)**2)
 
 def forward_op(
     true_intensity=None,
@@ -93,6 +97,102 @@ def forward_op_loopy(
             for row in range(aa):
                 out[z,:,col] += true_intensity[row,col] * gauss(
                     np.arange(aa)-row, a*true_doppler[row,col], abs(a)*true_linewidth[row,col]
+                    )
+    return out
+
+def forward_op_torch(
+    true_intensity=None,
+    true_doppler=None,
+    true_linewidth=None,
+    spectral_orders=[0,-1,1]):
+    """
+    Given 2d (or 3d where the first dimension is batch dim) arrays of intensity,
+    doppler, and linewidth, calculate the noise free measurements at the
+    specified spectral orders.
+
+    Args:
+        true_intensity (Tensor): 2d or 3d array of true intensities.
+        true_doppler (Tensor): 2d or 3d array of true doppler shifts in the
+            units of pixels.
+        true_linewidth (Tensor): 2d or 3d array of true line widths in the units
+            of pixels.
+        spectral_orders (list): list of the spectral orders.
+
+    Returns:
+        measurements (Tensor): 4d array of measurements. The first dimension is
+        the batch dim, and the second dim contains the specified spectral orders
+        with the same ordering.
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if len(true_intensity.shape) == 2:
+        true_intensity = true_intensity[None]
+        true_doppler = true_doppler[None]
+        true_linewidth = true_linewidth[None]
+    k, aa, bb = true_intensity.shape
+    out = torch.zeros((k,) + (len(spectral_orders),)+(aa,bb))
+    out = out.to(device=device, dtype=torch.float)
+    diffrange = torch.arange(aa)[None,None,:,None]-torch.arange(aa)[None,None,None,:]
+    diffrange = diffrange.to(device=device, dtype=torch.float)
+    # assume columns of detector are independent
+    for z,a in enumerate(spectral_orders):
+        if a == 0:
+            out[:,z] = true_intensity.clone()
+            continue
+        out[:,z] = torch.einsum(
+            'lkij,lkj->lki',
+            gauss_torch(
+                diffrange, 
+                a*true_doppler.permute(0,2,1)[:,:,None,:], 
+                abs(a)*true_linewidth.permute(0,2,1)[:,:,None,:]
+            ), 
+            true_intensity.permute(0,2,1)
+        ).permute(0,2,1)
+    return out
+
+def forward_op_torch_loopy(
+    true_intensity=None,
+    true_doppler=None,
+    true_linewidth=None,
+    spectral_orders=[0,-1,1]):
+    """
+    Given 2d (or 3d where the first dimension is batch dim) arrays of intensity,
+    doppler, and linewidth, calculate the noise free measurements at the
+    specified spectral orders.
+
+    Warning: This is an old an slow implementation. 
+
+    Args:
+        true_intensity (Tensor): 2d or 3d array of true intensities.
+        true_doppler (Tensor): 2d or 3d array of true doppler shifts in the
+            units of pixels.
+        true_linewidth (Tensor): 2d or 3d array of true line widths in the units
+            of pixels.
+        spectral_orders (list): list of the spectral orders.
+
+    Returns:
+        measurements (Tensor): 4d array of measurements. The first dimension is
+        the batch dim, and the second dim contains the specified spectral orders
+        with the same ordering.
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if len(true_intensity.shape) == 2:
+        true_intensity = true_intensity[None]
+        true_doppler = true_doppler[None]
+        true_linewidth = true_linewidth[None]
+    k, aa, bb = true_intensity.shape
+    out = torch.zeros((k,) + (len(spectral_orders),)+(aa,bb))
+    out = out.to(device=device, dtype=torch.float)
+    # assume columns of detector are independent
+    for z,a in enumerate(spectral_orders):
+        if a == 0:
+            out[:,z] = true_intensity.clone()
+            continue
+        for col in range(bb):
+            for row in range(aa):
+                out[:,z,:,col] += true_intensity[:,[row],col] * gauss_torch(
+                    torch.arange(aa)[None].to(device=device, dtype=torch.float)-row, 
+                    a*true_doppler[:,[row],col], 
+                    abs(a)*true_linewidth[:,[row],col]
                     )
     return out
 
