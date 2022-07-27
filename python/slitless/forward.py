@@ -12,10 +12,12 @@ def forward_op(
     true_doppler=None,
     true_linewidth=None,
     param3d=None,
-    spectral_orders=None):
+    spectral_orders=[0,-1,1]):
     """
     Given 2d arrays of intensity, doppler, and linewidth, calculate the noise
     free measurements at the specified spectral orders.
+
+    Notes: This implementation uses einsum instead of for loops and is faster.
 
     Args:
         true_intensity (ndarray): 2d array of true intensities.
@@ -30,9 +32,53 @@ def forward_op(
     Returns:
         measurements (ndarray): 3d array of measurements. The first dimension
             contains the specified spectral orders with the same ordering.
+    """
+    if param3d is not None:
+        true_intensity, true_doppler, true_linewidth = param3d
+    aa, bb = true_intensity.shape
+    out = np.zeros((len(spectral_orders),)+(aa,bb))
+    diffrange = np.arange(aa)[np.newaxis,:,np.newaxis]-np.arange(aa)[np.newaxis,np.newaxis,:]
+    # assume columns of detector are independent
+    for z,a in enumerate(spectral_orders):
+        if a == 0:
+            out[z] = true_intensity.copy()
+            continue
+        out[z] = np.einsum(
+            'kij,kj->ki',
+            gauss(
+                diffrange, 
+                a*true_doppler.transpose(1,0)[:,np.newaxis,:], 
+                abs(a)*true_linewidth.transpose(1,0)[:,np.newaxis,:]
+            ), 
+            true_intensity.transpose(1,0)
+        ).transpose(1,0)
+    return out
 
-    History:
-        v1.0: No instrument PSF is assumed, impulse sampling is assumed.
+def forward_op_loopy(
+    true_intensity=None,
+    true_doppler=None,
+    true_linewidth=None,
+    param3d=None,
+    spectral_orders=[0,-1,1]):
+    """
+    Given 2d arrays of intensity, doppler, and linewidth, calculate the noise
+    free measurements at the specified spectral orders.
+
+    Warning: This is an old an slow implementation. 
+
+    Args:
+        true_intensity (ndarray): 2d array of true intensities.
+        true_doppler (ndarray): 2d array of true doppler shifts in the units of
+            pixels.
+        true_linewidth (ndarray): 2d array of true line widths in the units of
+            pixels.
+        param3d (ndarray): 3d array of the 2d arrays of intensity, velocity, 
+            and line width. If provided, the 2d parameter inputs are ignored. 
+        spectral_orders (list): list of the spectral orders.
+
+    Returns:
+        measurements (ndarray): 3d array of measurements. The first dimension
+            contains the specified spectral orders with the same ordering.
     """
     if param3d is not None:
         true_intensity, true_doppler, true_linewidth = param3d
