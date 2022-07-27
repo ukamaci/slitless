@@ -36,7 +36,7 @@ def nmse_torch(truth, estimate):
     maxmin = torch.amax(truth, dim=(2,3)) - torch.amin(truth, dim=(2,3))
     return torch.mean(((truth-estimate)/maxmin[:,:,None,None])**2)
 
-def cycle_loss(meas, out, mode=='L2'):
+def cycle_loss(meas, out, mode='L2'):
     """
     Loss metric in the measurement domain. Takes the network output, passes it 
     through the forward op, and takes the MSE with the measurement.

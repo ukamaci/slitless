@@ -118,8 +118,8 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    trainset = BasicDataset(data_dir = dataset_path, fold='train', outch_type=OUTCH)
-    valset = BasicDataset(data_dir = dataset_path, fold='val', outch_type=OUTCH)
+    trainset = BasicDataset(data_dir = dataset_path, fold='train')
+    valset = BasicDataset(data_dir = dataset_path, fold='val')
     trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True)
     valloader = DataLoader(valset, batch_size=32, shuffle=True)
 
