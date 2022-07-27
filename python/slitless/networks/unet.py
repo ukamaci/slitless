@@ -6,11 +6,13 @@ from slitless.networks.unet_parts import DoubleConv,Up,Down,OutConv
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels, start_filters, ksize=(3,3), bilinear=True, residual=False):
+    def __init__(self, in_channels, out_channels, outch_type='all', start_filters=16, ksize=(3,3), bilinear=True, residual=False):
         super(UNet, self).__init__()
         self.in_channels = in_channels
+        self.out_channels = out_channels
         self.bilinear = bilinear
         self.residual = residual
+        self.outch_type = outch_type
         sf = start_filters
 
         self.inc = DoubleConv(in_channels, sf, ksize=ksize)
@@ -24,7 +26,7 @@ class UNet(nn.Module):
         self.up3 = Up(sf*4, sf*2 // factor, (2,2), bilinear, ksize=ksize)
         self.up4 = Up(sf*2, sf, (2,2), bilinear, ksize=ksize)
         # self.outc = nn.Conv2d(sf, 1, kernel_size=1)
-        self.outc = OutConv(sf, 3)
+        self.outc = OutConv(sf, out_channels)
 
     def forward(self, x0):
         x1 = self.inc(x0)

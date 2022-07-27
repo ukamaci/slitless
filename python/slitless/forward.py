@@ -143,7 +143,7 @@ def forward_op_torch(
             gauss_torch(
                 diffrange, 
                 a*true_doppler.permute(0,2,1)[:,:,None,:], 
-                abs(a)*true_linewidth.permute(0,2,1)[:,:,None,:]
+                torch.abs(a)*true_linewidth.permute(0,2,1)[:,:,None,:]
             ), 
             true_intensity.permute(0,2,1)
         ).permute(0,2,1)
@@ -192,7 +192,7 @@ def forward_op_torch_loopy(
                 out[:,z,:,col] += true_intensity[:,[row],col] * gauss_torch(
                     torch.arange(aa)[None].to(device=device, dtype=torch.float)-row, 
                     a*true_doppler[:,[row],col], 
-                    abs(a)*true_linewidth[:,[row],col]
+                    torch.abs(a)*true_linewidth[:,[row],col]
                     )
     return out
 

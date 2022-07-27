@@ -9,7 +9,7 @@ import datetime
 
 from slitless.data_loader import BasicDataset
 from slitless.networks.unet import UNet
-from slitless.measure import nrmse, nmse_torch
+from slitless.measure import nrmse, nmse_torch, combine_losses, cycle_loss
 import numpy as np
 import matplotlib.pyplot as plt
 from slitless.evaluate import plot_recons, plot_val_stats
@@ -41,9 +41,12 @@ def train_net(net,
 
             # forward + backward + optimize
             outputs = net(inputs)
-            loss = criterion(true_outputs, outputs)
+            loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
+            # print('Loss Calculated')
             loss.backward()
+            # print('Backward Propagated')
             optimizer.step()
+            # print('Optimizer Updated')
 
             # print statistics
             running_loss += loss.item()
@@ -62,7 +65,7 @@ def train_net(net,
 
             with torch.no_grad():
                 outputs = net(inputs)
-                loss = criterion(true_outputs, outputs)
+                loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
 
                 running_valloss += loss.item()
 
@@ -81,21 +84,27 @@ def train_net(net,
 # def main():
 if __name__ == '__main__':
     # ---------
-    NUM_FILT = 16
+    NUM_FILT = 32
     LR = 1e-3
-    EPOCHS = 300
+    EPOCHS = 10
     BATCH_SIZE = 64
     BILINEAR = True
     ksize = (3,1)
     OPTIMIZER = 'ADAM'
-    # LOSS = 'MSE'
-    LOSS = 'NMSE'
+    LOSS = 'L1'
+    # LOSS = 'NMSE'
+    CYC_LOSS = True
+    cyc_lam = 500
+    OUTCH = 'all'
+    out_channels = 3 if OUTCH=='all' else 1
     LOAD = False
     loaded_model_path = '../results/saved/nf_32_LR_0.001_EP_15.pth'
     dataset_path = glob.glob('../../data/datasets/dset3*')[0]
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-    name = f'{now}_NF_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksize)}_{LOSS}_LOSS'
+    name = f'{now}_NF_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksize)}_{LOSS}_LOSS_OUTCH_{OUTCH}'
+    if CYC_LOSS:
+        name += f'_CYC_LOSS_lam_{cyc_lam}'
     os.mkdir('../results/saved/'+name)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -109,16 +118,19 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    trainset = BasicDataset(data_dir = dataset_path, fold='train')
-    valset = BasicDataset(data_dir = dataset_path, fold='val')
+    trainset = BasicDataset(data_dir = dataset_path, fold='train', outch_type=OUTCH)
+    valset = BasicDataset(data_dir = dataset_path, fold='val', outch_type=OUTCH)
     trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True)
     valloader = DataLoader(valset, batch_size=32, shuffle=True)
 
-    net = UNet(in_channels=3,
-                 start_filters=NUM_FILT,
-                 bilinear=BILINEAR,
-                 ksize=ksize,
-                 residual=False).to(device)
+    net = UNet(
+        in_channels=3,
+        out_channels=out_channels,
+        outch_type=OUTCH,
+        start_filters=NUM_FILT,
+        bilinear=BILINEAR,
+        ksize=ksize,
+        residual=False).to(device)
 
     if LOAD:
         net.load_state_dict(torch.load(loaded_model_path))
@@ -130,20 +142,36 @@ if __name__ == '__main__':
 
     if LOSS=='MSE':
         criterion = nn.MSELoss()
+        losses_param = [nn.MSELoss()]
     elif LOSS=='L1':
         criterion = nn.L1Loss()
+        losses_param = [nn.L1Loss()]
     elif LOSS=='NMSE':
         criterion = nmse_torch
+        losses_param = [nmse_torch]
+
+    losses_meas = [cycle_loss] if CYC_LOSS else []
+    lam = [1,cyc_lam] if CYC_LOSS else [1]
+
+    criterion = combine_losses(
+        losses_param=losses_param,
+        losses_meas=losses_meas,
+        lam=lam, 
+        outch_type=net.outch_type
+    )
 
     training_summary = [
     '############## Network Parameters ############## \n',
     f'Number of starting filters = {NUM_FILT} \n',
     'Bilinear Interpolation for Upsampling (if False, use transposed ',
     f'convolution) = {BILINEAR} \n',
-    f'Kernel Size = {kfilt} \n',
+    f'Kernel Size = {ksize} \n',
+    f'Output Channels = {OUTCH} \n',
     '\n############## Optimization Parameters ############## \n',
     f'Optimizer = {OPTIMIZER} \n',
     f'Loss = {LOSS} \n',
+    f'Cycle Loss = {CYC_LOSS} \n',
+    f'Cycle Loss Lam = {cyc_lam} \n',
     f'Learning Rate = {LR} \n',
     f'Num Epochs = {EPOCHS} \n',
     f'Training Batch Size = {BATCH_SIZE} \n',
@@ -175,56 +203,86 @@ if __name__ == '__main__':
 
     torch.save(net.state_dict(), f'../results/saved/{name}/nf_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}.pth')
 
-net.load_state_dict(torch.load(f'../results/saved/{name}/best_model.pth'))
+    plt.figure()
+    plt.semilogy(trainloss, label='Training Loss')
+    plt.semilogy(valloss, label='Validation Loss')
+    plt.title('Convergence Plot')
+    plt.grid(which='both', axis='both')
+    plt.legend()
+    plt.savefig(f'../results/saved/{name}/convergence_plot.png')
+    plt.close()
 
-os.mkdir(f'../results/saved/{name}/figures')
-savedir = f'../results/saved/{name}/'
-valloader2 = DataLoader(valset, batch_size=len(valset), shuffle=True)
-ssims, rmses, yvec, outvec = plot_val_stats(net, valloader2, savedir)
-plot_recons(net, valloader, numim=32, savedir=savedir+'figures/')
-est_bias = np.mean(outvec - yvec, axis=1) 
-est_std = np.std(outvec - yvec, axis=1)
+    net.load_state_dict(torch.load(f'../results/saved/{name}/best_model.pth'))
 
-training_summary = [
-'\n############## Results ############## \n',
-'Final Validation Loss: {:.7f} \n'.format(valloss[-1]),
-'Minimum Validation Loss: {:.7f} \n'.format(np.min(valloss)),
-'Final Training Loss: {:.7f} \n'.format(trainloss[-1]),
-'Minimum Training Loss: {:.7f} \n\n'.format(np.min(trainloss)),
-'Intensity SSIM Mean: {:.3f} \n'.format((ssims[:,0].mean())),
-'Intensity SSIM Std: {:.3f} \n'.format((ssims[:,0].std())),
-'Intensity RMSE Mean: {:.3f} \n'.format((rmses[:,0].mean())),
-'Intensity RMSE Std: {:.3f} \n'.format((rmses[:,0].std())),
-'Intensity Bias: {:.4f} \n'.format((est_bias[0])),
-'Intensity Error Std: {:.4f} \n\n'.format((est_std[0])),
-'Velocity SSIM Mean: {:.3f} \n'.format((ssims[:,1].mean())),
-'Velocity SSIM Std: {:.3f} \n'.format((ssims[:,1].std())),
-'Velocity RMSE Mean: {:.3f} \n'.format((rmses[:,1].mean())),
-'Velocity RMSE Std: {:.3f} \n'.format((rmses[:,1].std())),
-'Velocity Bias: {:.4f} \n'.format((est_bias[1])),
-'Velocity Error Std: {:.4f} \n\n'.format((est_std[1])),
-'Linewidth SSIM Mean: {:.3f} \n'.format((ssims[:,2].mean())),
-'Linewidth SSIM Std: {:.3f} \n'.format((ssims[:,2].std())),
-'Linewidth RMSE Mean: {:.3f} \n'.format((rmses[:,2].mean())),
-'Linewidth RMSE Std: {:.3f} \n'.format((rmses[:,2].std())),
-'Linewidth Bias: {:.4f} \n'.format((est_bias[2])),
-'Linewidth Error Std: {:.4f} \n\n'.format((est_std[2])),
-f'Training Time: {str(train_time)} \n',
-'\n############## Notes ############## \n',
-]
+    os.mkdir(f'../results/saved/{name}/figures')
+    savedir = f'../results/saved/{name}/'
+    ssims, rmses, yvec, outvec = plot_val_stats(net, valloader, savedir)
+    plot_recons(net, valloader, numim=32, savedir=savedir+'figures/')
+    est_bias = np.mean(outvec - yvec, axis=1) 
+    est_std = np.std(outvec - yvec, axis=1)
 
-with open(f'../results/saved/{name}/summary.txt', 'w') as file:
-    for line in training_summary:
-        file.write(line)
+    training_summary = [
+    '\n############## Results ############## \n',
+    'Final Validation Loss: {:.7f} \n'.format(valloss[-1]),
+    'Minimum Validation Loss: {:.7f} \n'.format(np.min(valloss)),
+    'Final Training Loss: {:.7f} \n'.format(trainloss[-1]),
+    'Minimum Training Loss: {:.7f} \n\n'.format(np.min(trainloss)),
+    ]
 
-plt.figure()
-plt.semilogy(trainloss, label='Training Loss')
-plt.semilogy(valloss, label='Validation Loss')
-plt.title('Convergence Plot')
-plt.grid(which='both', axis='both')
-plt.legend()
-plt.savefig(f'../results/saved/{name}/convergence_plot.png')
-plt.close()
+    if net.outch_type == 'all':
+        training_summary += [
+            'Intensity SSIM Mean: {:.3f} \n'.format((ssims[:,0].mean())),
+            'Intensity SSIM Std: {:.3f} \n'.format((ssims[:,0].std())),
+            'Intensity RMSE Mean: {:.3f} \n'.format((rmses[:,0].mean())),
+            'Intensity RMSE Std: {:.3f} \n'.format((rmses[:,0].std())),
+            'Intensity Bias: {:.4f} \n'.format((est_bias[0])),
+            'Intensity Error Std: {:.4f} \n\n'.format((est_std[0])),
+            'Velocity SSIM Mean: {:.3f} \n'.format((ssims[:,1].mean())),
+            'Velocity SSIM Std: {:.3f} \n'.format((ssims[:,1].std())),
+            'Velocity RMSE Mean: {:.3f} \n'.format((rmses[:,1].mean())),
+            'Velocity RMSE Std: {:.3f} \n'.format((rmses[:,1].std())),
+            'Velocity Bias: {:.4f} \n'.format((est_bias[1])),
+            'Velocity Error Std: {:.4f} \n\n'.format((est_std[1])),
+            'Linewidth SSIM Mean: {:.3f} \n'.format((ssims[:,2].mean())),
+            'Linewidth SSIM Std: {:.3f} \n'.format((ssims[:,2].std())),
+            'Linewidth RMSE Mean: {:.3f} \n'.format((rmses[:,2].mean())),
+            'Linewidth RMSE Std: {:.3f} \n'.format((rmses[:,2].std())),
+            'Linewidth Bias: {:.4f} \n'.format((est_bias[2])),
+            'Linewidth Error Std: {:.4f} \n\n'.format((est_std[2])),
+        ]
+    elif net.outch_type == 'int':
+        training_summary += [
+            'Intensity SSIM Mean: {:.3f} \n'.format((ssims.mean())),
+            'Intensity SSIM Std: {:.3f} \n'.format((ssims.std())),
+            'Intensity RMSE Mean: {:.3f} \n'.format((rmses.mean())),
+            'Intensity RMSE Std: {:.3f} \n'.format((rmses.std())),
+            'Intensity Bias: {:.4f} \n'.format((est_bias[0])),
+            'Intensity Error Std: {:.4f} \n\n'.format((est_std[0])),
+        ]
+    elif net.outch_type == 'vel':
+        training_summary += [
+            'Velocity SSIM Mean: {:.3f} \n'.format((ssims.mean())),
+            'Velocity SSIM Std: {:.3f} \n'.format((ssims.std())),
+            'Velocity RMSE Mean: {:.3f} \n'.format((rmses.mean())),
+            'Velocity RMSE Std: {:.3f} \n'.format((rmses.std())),
+            'Velocity Bias: {:.4f} \n'.format((est_bias[0])),
+            'Velocity Error Std: {:.4f} \n\n'.format((est_std[0])),
+        ]
+    elif net.outch_type == 'width':
+        training_summary += [
+            'Linewidth SSIM Mean: {:.3f} \n'.format((ssims.mean())),
+            'Linewidth SSIM Std: {:.3f} \n'.format((ssims.std())),
+            'Linewidth RMSE Mean: {:.3f} \n'.format((rmses.mean())),
+            'Linewidth RMSE Std: {:.3f} \n'.format((rmses.std())),
+            'Linewidth Bias: {:.4f} \n'.format((est_bias[0])),
+            'Linewidth Error Std: {:.4f} \n\n'.format((est_std[0])),
+        ]
 
-# if __name__ == '__main__':
-#     main()
+    training_summary += [
+        f'Training Time: {str(train_time)} \n',
+        '\n############## Notes ############## \n',
+    ]
+
+    with open(f'../results/saved/{name}/summary.txt', 'w') as file:
+        for line in training_summary:
+            file.write(line)
