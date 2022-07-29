@@ -135,6 +135,7 @@ def forward_op_torch(
     diffrange = diffrange.to(device=device, dtype=torch.float)
     # assume columns of detector are independent
     for z,a in enumerate(spectral_orders):
+        a = torch.Tensor([a]).to(device=device, dtype=torch.float)
         if a == 0:
             out[:,z] = true_intensity.clone()
             continue
@@ -184,6 +185,7 @@ def forward_op_torch_loopy(
     out = out.to(device=device, dtype=torch.float)
     # assume columns of detector are independent
     for z,a in enumerate(spectral_orders):
+        a = torch.Tensor([a]).to(device=device, dtype=torch.float)
         if a == 0:
             out[:,z] = true_intensity.clone()
             continue
