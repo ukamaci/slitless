@@ -4,8 +4,48 @@ import torch
 import torch.nn as nn
 from slitless.networks.unet_parts import DoubleConv,Up,Down,OutConv
 
-
 class UNet(nn.Module):
+    def __init__(self, in_channels, out_channels, outch_type='all', numlayers=4, start_filters=16, ksizes=[(3,3)], bilinear=True, residual=False):
+        super(UNet, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.numlayers = numlayers
+        self.ksizes = ksizes
+        self.bilinear = bilinear
+        self.residual = residual
+        self.outch_type = outch_type
+        sf = start_filters
+
+        if len(ksizes)==1:
+            ksizes = ksizes * numlayers
+
+        self.inc = DoubleConv(in_channels, sf, ksize=ksizes[0])
+        factor = 2 if bilinear else 1
+        for i in range(numlayers):
+            if i==numlayers-1:
+                setattr(self, f'down{i+1}', Down(sf*2**i, 2*sf*2**i//factor, (2,2), ksize=ksizes[i]))
+                setattr(self, f'up{i+1}', Up(sf*2, sf, (2,2), ksize=ksizes[numlayers-i-1]))
+                continue
+            setattr(self, f'down{i+1}', Down(sf*2**i, 2*sf*2**i, (2,2), ksize=ksizes[i+1]))
+            setattr(self, f'up{i+1}', Up(sf*2**(numlayers-i), sf*2**(numlayers-i-1)//factor, (2,2), bilinear, ksize=ksizes[numlayers-i-1]))
+        self.outc = OutConv(sf, out_channels)
+
+    def forward(self, x0):
+        xs=[self.inc(x0)]
+        for i in range(self.numlayers):
+            xs.append(getattr(self, f'down{i+1}')(xs[i]))
+        x = self.up1(xs[-1], xs[-2])
+        for i in range(self.numlayers-1):
+            x = getattr(self, f'up{i+2}')(x, xs[-3-i])
+        logits = self.outc(x)
+
+        if self.residual:
+            return x0 - logits
+        else:
+            return logits
+
+
+class UNet_fixed(nn.Module):
     def __init__(self, in_channels, out_channels, outch_type='all', start_filters=16, ksize=(3,3), bilinear=True, residual=False):
         super(UNet, self).__init__()
         self.in_channels = in_channels
@@ -43,3 +83,4 @@ class UNet(nn.Module):
             return x0 - logits
         else:
             return logits
+

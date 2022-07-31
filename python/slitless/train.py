@@ -84,25 +84,26 @@ def train_net(net,
 # def main():
 if __name__ == '__main__':
     # ---------
-    NUM_FILT = 32
-    LR = 1e-3
-    EPOCHS = 10
+    NUM_FILT = 128
+    numlayers = 2
+    LR = 5e-3
+    EPOCHS = 50
     BATCH_SIZE = 64
     BILINEAR = True
-    ksize = (3,1)
+    ksizes = [(5,1), (3,1)] #, (3,3), (3,3)]
     OPTIMIZER = 'ADAM'
     LOSS = 'L1'
     # LOSS = 'NMSE'
-    CYC_LOSS = True
+    CYC_LOSS = False
     cyc_lam = 500
-    OUTCH = 'all'
+    OUTCH = 'vel'
     out_channels = 3 if OUTCH=='all' else 1
     LOAD = False
     loaded_model_path = '../results/saved/nf_32_LR_0.001_EP_15.pth'
     dataset_path = glob.glob('../../data/datasets/dset3*')[0]
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-    name = f'{now}_NF_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksize)}_{LOSS}_LOSS_OUTCH_{OUTCH}'
+    name = f'{now}_NF_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_OUTCH_{OUTCH}'
     if CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
     os.mkdir('../results/saved/'+name)
@@ -126,10 +127,11 @@ if __name__ == '__main__':
     net = UNet(
         in_channels=3,
         out_channels=out_channels,
+        numlayers=numlayers,
         outch_type=OUTCH,
         start_filters=NUM_FILT,
         bilinear=BILINEAR,
-        ksize=ksize,
+        ksizes=ksizes,
         residual=False).to(device)
 
     if LOAD:
@@ -165,7 +167,7 @@ if __name__ == '__main__':
     f'Number of starting filters = {NUM_FILT} \n',
     'Bilinear Interpolation for Upsampling (if False, use transposed ',
     f'convolution) = {BILINEAR} \n',
-    f'Kernel Size = {ksize} \n',
+    f'Kernel Size = {ksizes} \n',
     f'Output Channels = {OUTCH} \n',
     '\n############## Optimization Parameters ############## \n',
     f'Optimizer = {OPTIMIZER} \n',
@@ -221,7 +223,7 @@ if __name__ == '__main__':
     est_bias = np.mean(outvec - yvec, axis=1) 
     est_std = np.std(outvec - yvec, axis=1)
 
-    training_summary = [
+    training_summary += [
     '\n############## Results ############## \n',
     'Final Validation Loss: {:.7f} \n'.format(valloss[-1]),
     'Minimum Validation Loss: {:.7f} \n'.format(np.min(valloss)),
