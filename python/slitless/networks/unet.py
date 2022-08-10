@@ -24,7 +24,7 @@ class UNet(nn.Module):
         for i in range(numlayers):
             if i==numlayers-1:
                 setattr(self, f'down{i+1}', Down(sf*2**i, 2*sf*2**i//factor, (2,2), ksize=ksizes[i]))
-                setattr(self, f'up{i+1}', Up(sf*2, sf, (2,2), ksize=ksizes[numlayers-i-1]))
+                setattr(self, f'up{i+1}', Up(sf*2, sf, (2,2), bilinear, ksize=ksizes[numlayers-i-1]))
                 continue
             setattr(self, f'down{i+1}', Down(sf*2**i, 2*sf*2**i, (2,2), ksize=ksizes[i+1]))
             setattr(self, f'up{i+1}', Up(sf*2**(numlayers-i), sf*2**(numlayers-i-1)//factor, (2,2), bilinear, ksize=ksizes[numlayers-i-1]))
@@ -47,7 +47,7 @@ class UNet(nn.Module):
 
 class UNet_fixed(nn.Module):
     def __init__(self, in_channels, out_channels, outch_type='all', start_filters=16, ksize=(3,3), bilinear=True, residual=False):
-        super(UNet, self).__init__()
+        super(UNet_fixed, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.bilinear = bilinear
