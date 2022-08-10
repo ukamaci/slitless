@@ -2,13 +2,15 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-import torch, glob
+import torch, glob, os
 from slitless.measure import compare_ssim, nrmse
 from slitless.networks.unet import UNet
 from torch.utils.data import DataLoader
 from slitless.data_loader import BasicDataset
 
 def plot_recons(net, valloader, numim, savedir):
+    if not os.path.exists(savedir):
+        os.mkdir(savedir)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     x, y = next(iter(valloader))
     numim = min(numim, x.shape[0])
@@ -270,23 +272,28 @@ def plot_val_stats(net, valloader, savedir):
     return ssims, rmses, yvec, outvec
 
 if __name__ == '__main__':
-    foldname0 = '2022_07_25__21_46*'
+    foldname0 = '2022_07_30__15_54_58*'
     foldpath = glob.glob('../results/saved/'+foldname0)[0]
     modpath = foldpath+'/best_model.pth'
-    net = UNet(in_channels=3,
-        out_channels=3,
+    net = UNet(
+        in_channels=3,
+        out_channels=1,
+        numlayers=2,
         outch_type='vel',
-        start_filters=32,
+        start_filters=128,
         bilinear=True,
-        ksize=(3,1),
-        residual=False
-    )
+        ksizes=[(5,1),(3,1)],
+        residual=False)
     net.load_state_dict(torch.load(modpath))
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.to(device)
     dataset_path = glob.glob('../../data/datasets/dset3*')[0]
-    valset = BasicDataset(data_dir = dataset_path, fold='val')
-    valloader = DataLoader(valset, batch_size=32, shuffle=True)
-    savedir = foldpath+'/'
-    ssims, rmses, yvec, outvec = plot_val_stats(net, valloader, savedir)
-    # plot_recons(net, valloader, 32, savedir+'figures/')
+    dataset = BasicDataset(data_dir = dataset_path, fold='train')
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+    savedir = foldpath+'/train_results/'
+    if not os.path.exists(savedir):
+        os.mkdir(savedir)
+
+    # ssims, rmses, yvec, outvec = plot_val_stats(net, dataloader, savedir)
+    plot_recons(net, dataloader, 32, savedir+'figures/')

@@ -84,13 +84,13 @@ def train_net(net,
 # def main():
 if __name__ == '__main__':
     # ---------
-    NUM_FILT = 128
-    numlayers = 2
+    NUM_FILT = 64
+    numlayers = 4
     LR = 5e-3
     EPOCHS = 50
-    BATCH_SIZE = 64
+    BATCH_SIZE = 2
     BILINEAR = True
-    ksizes = [(5,1), (3,1)] #, (3,3), (3,3)]
+    ksizes = [(3,1), (3,1), (3,1), (3,1)]
     OPTIMIZER = 'ADAM'
     LOSS = 'L1'
     # LOSS = 'NMSE'
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     dataset_path = glob.glob('../../data/datasets/dset3*')[0]
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-    name = f'{now}_NF_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_OUTCH_{OUTCH}'
+    name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}'
     if CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
     os.mkdir('../results/saved/'+name)

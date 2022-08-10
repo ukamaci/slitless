@@ -1,29 +1,40 @@
 # Written for checking if the forward op works fine.
 
 import numpy as np
+import time
 import matplotlib.pyplot as plt
 from slitless.forward import Source, Imager
 from mas.forward_model import size_equalizer
 
 path_data = '/home/kamo/resources/slitless/data/datasets/dset0_2022_06_14/'
 
-# sr = Source(
-#     inten=np.load(path_data+'int.npy'),
-#     vel=np.load(path_data+'vel.npy'),
-#     width=np.load(path_data+'wid.npy')
-# )
-
 sr = Source(
-    inten=size_equalizer(np.ones((51,51)), (100,100)),
-    vel=np.ones((100,100))*500,
-    # vel=(np.arange(10000).reshape((100,100))%2-0.5)*300,
-    width=np.ones((100,100))*0.30
+    inten=np.load(path_data+'int.npy'),
+    vel=np.load(path_data+'vel.npy'),
+    width=np.load(path_data+'wid.npy')*0.2,
+    pix=False
 )
 
-imgr = Imager()
+# dim=400
+# sr = Source(
+#     inten=size_equalizer(np.ones((dim//2+1,dim//2+1)), (dim,dim)),
+#     vel=np.ones((dim,dim))*500,
+#     # vel=(np.arange(10000).reshape((100,100))%2-0.5)*300,
+#     width=np.ones((dim,dim))*0.30
+# )
 
-imgr.get_measurements(sr)
+imgr1 = Imager(pixelated=False)
+imgr2 = Imager(pixelated=True)
+
+t0 = time.time()
+imgr1.get_measurements(sr)
+t1 = time.time()
+print('Time pix=False: {:.2f} secs'.format(t1-t0))
+imgr2.get_measurements(sr)
+t2 = time.time()
+print('Time pix=True: {:.2f} secs'.format(t2-t1))
 
 # %% plot
-imgr.srpix.plot()
-imgr.plot()
+imgr1.srpix.plot()
+imgr1.plot(title='Pixelated=False')
+imgr2.plot(title='Pixelated=True')

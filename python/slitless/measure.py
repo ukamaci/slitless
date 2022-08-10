@@ -48,7 +48,10 @@ def cycle_loss(meas, out, mode='L2'):
     Returns:
         loss (float): scalar loss value
     """
-    inten, vel, width = out.transpose(1,0)
+    if len(out.shape) == 4:
+        inten, vel, width = out.transpose(1,0)
+    elif len(out.shape) == 3:
+        inten, vel, width = out
     if mode=='L2':
         return torch.mean((forward_op_torch(inten, vel, width) - meas)**2)
     elif mode=='L1':
