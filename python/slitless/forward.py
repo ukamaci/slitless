@@ -289,30 +289,6 @@ class Imager():
             fig.colorbar(im, ax=ax[i])
         plt.show()
 
-
-if __name__ == '__main__':
-    aa, bb = (300,300)
-    detector_size = (aa,bb)
-    true_intensity = resize(camera(), detector_size)
-    true_doppler = (resize(shepp_logan_phantom(), detector_size)-0.5)*0.3
-    true_linewidth = 0.2*resize(cell(), detector_size)+0.5
-    # true_doppler = 5*(true_intensity.copy() - 0.5)
-    # true_linewidth = true_intensity.copy() * 5
-    # true_intensity = np.zeros((aa,bb))
-    # true_intensity[5] = 1
-    spectral_orders=(-1,1)
-    meas = forward_op(
-        true_intensity=true_intensity,
-        true_doppler=true_doppler,
-        true_linewidth=true_linewidth,
-        spectral_orders=spectral_orders
-    )
-    # amo = np.zeros((aa,bb)) + 0.05
-    # x0 = np.stack( ( meas[0], amo, amo ), axis=0 ).flatten()
-    # recon = minimize(obj_ls, x0, args=(meas,), method='Nelder-Mead',
-    #     options={'disp':True, 'maxiter':1000, 'adaptive':True})
-    # rec = recon.x.reshape(3,aa,bb)
-
 def forward_op_loopy(
     true_intensity=None,
     true_doppler=None,

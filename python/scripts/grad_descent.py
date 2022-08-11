@@ -28,34 +28,48 @@ pixelated = True
 imgr = Imager(pixelated=pixelated)
 imgr.get_measurements(sr)
 
-mu = 1e3 # GD step size
-maxiters = 20000
+mu_vel = 1e3 # GD step size for vel
+mu_width = 2e3 # GD step size for width
+maxiters = 10000
 losses = []
-diffs = []
+diffs_vel = []
+diffs_width = []
 
 meas = torch.from_numpy(imgr.meas3dar).to(device=device, dtype=torch.float)
 x = x.to(device=device, dtype=torch.float)
 
-# KEEP INT & WIDTH AS TRUE VALUES AND ONLY ESTIMATE VELOCITY
 xh_int = x[0,0]
 xh_vel = torch.zeros(
     (meas.shape[1],meas.shape[2]), device=device, dtype=torch.float, requires_grad=True)
-# xh_width = 0.6*torch.ones(
-#     (meas.shape[1],meas.shape[2]), device=device, dtype=torch.float, requires_grad=True)
-xh_width = x[0,2]
+# xh_vel = x[0,1]
+xh_width = 0.75*torch.ones((meas.shape[1],meas.shape[2]), device=device, dtype=torch.float)
+xh_width = xh_width.requires_grad_()
+# xh_width = x[0,2]
 
 for i in tqdm(range(maxiters)):
-    # loss = cycle_loss(meas, xh)
     loss = torch.mean((meas-forward_op_torch(xh_int,xh_vel,xh_width, pixelated=pixelated))**2)
     loss.backward()
 
     with torch.no_grad():
-        xh_vel -= mu * xh_vel.grad
+        xh_vel -= mu_vel * xh_vel.grad
         xh_vel.grad.zero_()
+        xh_width -= mu_width * xh_width.grad
+        xh_width.grad.zero_()
 
         losses.append(loss.detach().cpu().numpy())
-        diff = torch.sum((x[0,1]-xh_vel)**2)/torch.sum(x[0,1]**2)
-        diffs.append(diff.detach().cpu().numpy())
+        diff_vel = torch.sum((x[0,1]-xh_vel)**2)/torch.sum(x[0,1]**2)
+        diffs_vel.append(diff_vel.detach().cpu().numpy())
+
+    # loss = torch.mean((meas-forward_op_torch(xh_int,xh_vel.detach(),xh_width, pixelated=pixelated))**2)
+    # loss.backward()
+
+    # with torch.no_grad():
+        # xh_width -= mu_width * xh_width.grad
+        # xh_width.grad.zero_()
+
+    #     losses.append(loss.detach().cpu().numpy())
+        diff_width = torch.sum((x[0,2]-xh_width)**2)/torch.sum(x[0,2]**2)
+        diffs_width.append(diff_width.detach().cpu().numpy())
 
 plt.figure()
 plt.plot(losses)
@@ -65,18 +79,26 @@ plt.ylabel('Loss')
 plt.show()
 
 plt.figure()
-plt.plot(diffs)
-plt.title('||x-xh|| vs Iter')
+plt.plot(diffs_vel)
+plt.title('||x_vel-xh_vel|| vs Iter')
 plt.xlabel('Iter')
-plt.ylabel('||x-xh||')
+plt.ylabel('||x_vel-xh_vel||')
 plt.show()
 
-xhh = xh_vel.detach().cpu().numpy()
+plt.figure()
+plt.plot(diffs_width)
+plt.title('||x_width-xh_width|| vs Iter')
+plt.xlabel('Iter')
+plt.ylabel('||x_width-xh_width||')
+plt.show()
+
 sr2 = Source(
-    inten=x[0,0].cpu().numpy(),
-    vel=np.array(xhh),
-    width=x[0,2].cpu().numpy()
+    inten=xh_int.detach().cpu().numpy(),
+    vel=xh_vel.detach().cpu().numpy(),
+    width=xh_width.detach().cpu().numpy()
 )
 
-sr.plot('Orig')
-sr2.plot('Est')
+sr.plot('Original')
+plt.tight_layout()
+sr2.plot('Estimated')
+plt.tight_layout()
