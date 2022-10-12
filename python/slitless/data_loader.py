@@ -25,6 +25,9 @@ class BasicDataset(Dataset):
         elif fold == 'val':
             self.val = True
             self.task_dir = os.path.join(data_dir, 'val')
+        elif fold == 'test':
+            self.test = True
+            self.task_dir = os.path.join(data_dir, 'test')
 
         self.files = glob.glob(self.task_dir+'/*')
         self.files.sort()
