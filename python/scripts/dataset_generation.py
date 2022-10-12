@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage.color import rgb2gray
-import glob, itertools
+import glob, itertools, os
 from mas.forward_model import size_equalizer
 from slitless.forward import Source, Imager
 from pqdm.processes import pqdm
@@ -39,6 +39,68 @@ def patch_extractor(file_path, path_save, ps=(64,64)):
             print('Saving image: {}'.format(ctr))
             ctr += 1
 
+def eis_datasetter(arrays_path, out_path, ar_dim=64, pixelated=True):
+    if not os.path.exists(out_path):
+        os.mkdir(out_path)
+
+    int_files = glob.glob(arrays_path+'int*')
+    int_files.sort()
+    vel_files = glob.glob(arrays_path+'vel*')
+    vel_files.sort()
+    width_files = glob.glob(arrays_path+'width*')
+    width_files.sort()
+
+    spectral_orders = [0,-1,1]
+    imgr = Imager(spectral_orders=spectral_orders, pixelated=pixelated)
+
+    for i in range(len(int_files)):
+        print('Scan {} of {}'.format(i+1, len(int_files)))
+        assert int_files[i][-19:]==vel_files[i][-19:], 'data name mismatch!'
+        inten0 = np.load(int_files[i])
+        vel0 = np.load(vel_files[i])
+        width0 = np.load(width_files[i])
+        numx = vel0.shape[1]//ar_dim
+        numy = vel0.shape[0]//ar_dim
+
+        for j in range(numy):
+            for k in range(numx):
+                intt = inten0[j*ar_dim:(j+1)*ar_dim, k*ar_dim:(k+1)*ar_dim]
+                intt /= intt.max()
+                vel = vel0[j*ar_dim:(j+1)*ar_dim, k*ar_dim:(k+1)*ar_dim]
+                width = width0[j*ar_dim:(j+1)*ar_dim, k*ar_dim:(k+1)*ar_dim]
+                sr = Source(
+                    inten=intt,
+                    vel=vel,
+                    width=width,
+                    pix=False
+                )
+                imgr.get_measurements(sr)
+
+                out = {'int': imgr.srpix.inten, 'vel': imgr.srpix.vel, 'width': imgr.srpix.width}
+                for jj in imgr.spectral_orders:
+                    out[f'meas_{jj}'] = imgr.meas3d[str(jj)]
+                np.save(out_path+f'data_{i+1}_{j*numx+k+1}.npy', out)
+
+def dataset_visualizer(path, ind=None):
+    files = glob.glob(path+'*npy')
+    files.sort()
+    if ind is None:
+        ind = np.random.randint(len(files))
+    file = files[ind]
+    data = np.load(file, allow_pickle=True).item()
+    # params = np.stack([data['int'], data['vel'], data['width']])
+    # meas = np.stack([data['meas_0'], data['meas_-1'], data['meas_1']])
+    sr = Source(
+        inten=data['int'],
+        vel=data['vel'],
+        width=data['width'],
+        pix=True
+    )
+    sr.plot(title=f'data {ind+1}')
+
+
+
+
 # %% fwd
 def fwd_meas(i):
     """
@@ -70,12 +132,12 @@ def fwd_meas(i):
     int_ar = plt.imread(f_int)[:,:,0]
     vel_ar = plt.imread(f_vel)[:,:,0]
     width_ar = plt.imread(f_width)[:,:,0]
-    int_ar = (int_ar-int_ar.min())/(int_ar.max()-int_ar.min())
-    vel_ar = (vel_ar-vel_ar.min())/(vel_ar.max()-vel_ar.min())
-    width_ar = (width_ar-width_ar.min())/(width_ar.max()-width_ar.min())
+    int_ar = (int_ar-int_ar.min())/(int_ar.max()-int_ar.min()+1e-6)
+    vel_ar = (vel_ar-vel_ar.min())/(vel_ar.max()-vel_ar.min()+1e-6)
+    width_ar = (width_ar-width_ar.min())/(width_ar.max()-width_ar.min()+1e-6)
     vel_scale = np.random.uniform(vel_min, vel_max)
     width_min = np.random.uniform(width_min_min, width_min_max)
-    width_max = width_max_min + (width_max_max - width_max_min) / (width_min_max-width_min_min)*(width_min-width_min_min)
+    width_max = width_max_min + (width_max_max - width_max_min) / (width_min_max-width_min_min+1e-6)*(width_min-width_min_min)
     vel_ar = 2 * vel_scale * vel_ar - vel_scale
     width_ar = width_ar * (width_max - width_min) + width_min
     sr = Source(
@@ -96,14 +158,14 @@ if __name__ == '__main__':
     #
     # patch_extractor(file_path, path_save)
 
-    trainsize = 10000
-    valsize = 2000
-    testsize = 1000
+    trainsize = 50000
+    valsize = 5000
+    testsize = 5000
 
-    numsize = valsize
+    numsize = trainsize
     file_path = '/home/kamo/resources/slitless/data/datasets/dset2_2022_07_03_102flowers_64_64_patches/'
-    path_save0 = '/home/kamo/resources/slitless/data/datasets/dset3_2022_07_04_102flowers_meas_params/'
-    path_save = path_save0+'val/'
+    path_save0 = '/home/kamo/resources/slitless/data/datasets/dset5_flowers_50000/'
+    path_save = path_save0+'train/'
 
     args = np.arange(numsize)
     pqdm(args, fwd_meas, n_jobs=32)

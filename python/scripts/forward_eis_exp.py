@@ -11,16 +11,18 @@ path_data = '/home/kamo/resources/slitless/data/datasets/dset0_2022_06_14/'
 sr = Source(
     inten=np.load(path_data+'int.npy'),
     vel=np.load(path_data+'vel.npy'),
-    width=np.load(path_data+'wid.npy')*0.2,
+    width=np.load(path_data+'wid.npy'),
     pix=False
 )
 
-# dim=400
+# dim=100
 # sr = Source(
-#     inten=size_equalizer(np.ones((dim//2+1,dim//2+1)), (dim,dim)),
-#     vel=np.ones((dim,dim))*500,
+#     # inten=size_equalizer(np.ones((dim//2+1,dim//2+1)), (dim,dim)),
+#     inten=np.ones((dim,dim)),
+#     vel=np.ones((dim,dim)),
 #     # vel=(np.arange(10000).reshape((100,100))%2-0.5)*300,
-#     width=np.ones((dim,dim))*0.30
+#     width=np.ones((dim,dim))*0.30,
+#     pix=True
 # )
 
 imgr1 = Imager(pixelated=False)
