@@ -26,6 +26,7 @@ def train_net(net,
 
     train_loss_over_epochs = []
     val_loss_over_epochs = []
+    best_valloss = 1e6
 
     for epoch in tqdm(range(epochs)):  # loop over the dataset multiple times
 
@@ -52,12 +53,11 @@ def train_net(net,
             running_loss += loss.item()
 
         # Normalizing the loss by the total number of train batches
-        running_loss/=len(trainloader)*trainloader.batch_size
+        running_loss/=len(trainloader)
         logging.info('[%d] Train loss: %.7f' % (epoch + 1, running_loss))
 
         net.eval()
         running_valloss = 0.0
-        best_valloss = 1e6
         for i, data in enumerate(valloader):
             # get the inputs
             inputs = data[0].to(device=device, dtype=torch.float)
@@ -69,42 +69,43 @@ def train_net(net,
 
                 running_valloss += loss.item()
 
-        running_valloss/=len(valloader)*valloader.batch_size
+        running_valloss/=len(valloader)
         logging.info('Validation loss: %.7f' % (running_valloss))
 
         if running_valloss < best_valloss:
-            best_valloss = running_valloss
+            best_valloss = running_valloss*1
             torch.save(net.state_dict(), f'../results/saved/{name}/best_model.pth')
 
         train_loss_over_epochs.append(running_loss)
         val_loss_over_epochs.append(running_valloss)
 
-    return train_loss_over_epochs, val_loss_over_epochs
+    return train_loss_over_epochs, val_loss_over_epochs, net
 
-# def main():
 if __name__ == '__main__':
     # ---------
     NUM_FILT = 64
     numlayers = 4
-    LR = 5e-3
-    EPOCHS = 50
-    BATCH_SIZE = 2
+    LR = 1e-3
+    EPOCHS = 10
+    BATCH_SIZE = 8
     BILINEAR = True
     ksizes = [(3,1), (3,1), (3,1), (3,1)]
     OPTIMIZER = 'ADAM'
-    LOSS = 'L1'
+    LOSS = 'MSE'
     # LOSS = 'NMSE'
-    CYC_LOSS = False
-    cyc_lam = 500
-    OUTCH = 'vel'
+    CYC_LOSS = True
+    cyc_lam = 1
+    CYC_ONLY = True
+    LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
+    OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
-    LOAD = False
-    loaded_model_path = '../results/saved/nf_32_LR_0.001_EP_15.pth'
-    dataset_path = glob.glob('../../data/datasets/dset3*')[0]
+    LOAD = True
+    loaded_model_path = '../results/saved/2022_10_08__18_57_19_NF_64_BS_8_LR_0.001_EP_10_KSIZE_(3, 1)_CYCLE_ONLY_LOSS_ADAM_all/best_model.pth'
+    dataset_path = glob.glob('../../data/datasets/dset5*')[0]
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
     name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}'
-    if CYC_LOSS:
+    if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
     os.mkdir('../results/saved/'+name)
     logger = logging.getLogger()
@@ -121,8 +122,10 @@ if __name__ == '__main__':
 
     trainset = BasicDataset(data_dir = dataset_path, fold='train')
     valset = BasicDataset(data_dir = dataset_path, fold='val')
+    testset = BasicDataset(data_dir = dataset_path, fold='test')
     trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True)
     valloader = DataLoader(valset, batch_size=32, shuffle=True)
+    testloader = DataLoader(testset, batch_size=32, shuffle=True)
 
     net = UNet(
         in_channels=3,
@@ -151,9 +154,12 @@ if __name__ == '__main__':
     elif LOSS=='NMSE':
         criterion = nmse_torch
         losses_param = [nmse_torch]
+    if CYC_ONLY is True:
+        losses_param = []
 
     losses_meas = [cycle_loss] if CYC_LOSS else []
     lam = [1,cyc_lam] if CYC_LOSS else [1]
+    lam = [1] if CYC_ONLY else lam
 
     criterion = combine_losses(
         losses_param=losses_param,
@@ -168,6 +174,7 @@ if __name__ == '__main__':
     'Bilinear Interpolation for Upsampling (if False, use transposed ',
     f'convolution) = {BILINEAR} \n',
     f'Kernel Size = {ksizes} \n',
+    f'Number of Layers = {numlayers} \n',
     f'Output Channels = {OUTCH} \n',
     '\n############## Optimization Parameters ############## \n',
     f'Optimizer = {OPTIMIZER} \n',
@@ -188,7 +195,7 @@ if __name__ == '__main__':
 
     try:
         t0 = time.time()
-        trainloss, valloss = train_net(net=net,
+        trainloss, valloss, net = train_net(net=net,
                   device=device,
                   trainloader=trainloader,
                   valloader=valloader,
@@ -216,12 +223,21 @@ if __name__ == '__main__':
 
     net.load_state_dict(torch.load(f'../results/saved/{name}/best_model.pth'))
 
-    os.mkdir(f'../results/saved/{name}/figures')
     savedir = f'../results/saved/{name}/'
-    ssims, rmses, yvec, outvec = plot_val_stats(net, valloader, savedir)
-    plot_recons(net, valloader, numim=32, savedir=savedir+'figures/')
+    ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
+    plot_recons(net, testloader, numim=32, savedir=savedir+'figures/')
     est_bias = np.mean(outvec - yvec, axis=1) 
     est_std = np.std(outvec - yvec, axis=1)
+
+    os.mkdir(f'../results/saved/{name}/val_results')
+    savedir = f'../results/saved/{name}/val_results/'
+    _ = plot_val_stats(net, valloader, savedir)
+    plot_recons(net, valloader, numim=32, savedir=savedir+'figures/')
+
+    os.mkdir(f'../results/saved/{name}/train_results')
+    savedir = f'../results/saved/{name}/train_results/'
+    _ = plot_val_stats(net, trainloader, savedir)
+    plot_recons(net, trainloader, numim=32, savedir=savedir+'figures/')
 
     training_summary += [
     '\n############## Results ############## \n',
@@ -283,6 +299,8 @@ if __name__ == '__main__':
     training_summary += [
         f'Training Time: {str(train_time)} \n',
         '\n############## Notes ############## \n',
+        'Training only with the cycle loss to see what happens. \n',
+        '\n############## Comments ############## \n'
     ]
 
     with open(f'../results/saved/{name}/summary.txt', 'w') as file:
