@@ -19,7 +19,7 @@ def nrmse(*, truth, estimate, normalization='minmax'):
         norm = 1
     return np.sqrt(np.mean((truth-estimate)**2)) / (norm)
 
-@_vectorize(signature='(a,b),(a,b)->()', included=['truth', 'estimate'])
+@_vectorize(signature='(a,b),(a,b),()->()', included=['truth', 'estimate', 'maxval'])
 def compare_psnr(*, truth, estimate, maxval=1):
     """
     Computes PSNR.
