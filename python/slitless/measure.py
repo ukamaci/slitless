@@ -1,5 +1,4 @@
 from skimage.metrics import structural_similarity as skimage_ssim
-from skimage.metrics import peak_signal_noise_ratio as skimage_psnr
 from mas.decorators import _vectorize
 from slitless.forward import forward_op_torch
 import numpy as np
@@ -18,8 +17,44 @@ def nrmse(*, truth, estimate, normalization='minmax'):
         norm = truth.max() - truth.min()
     elif normalization is None:
         norm = 1
-    
-    return np.sqrt(np.mean((truth-estimate)**2)) / norm
+    return np.sqrt(np.mean((truth-estimate)**2)) / (norm)
+
+@_vectorize(signature='(a,b),(a,b)->()', included=['truth', 'estimate'])
+def compare_psnr(*, truth, estimate, maxval=1):
+    """
+    Computes PSNR.
+    maxval is the maximum value that the true array can possibly take.
+    """
+    return 10*np.log10(maxval**2/np.mean((truth-estimate)**2))
+
+def tv_loss(img):
+    """
+    Computes the (mean) total variation of the input image.
+    """
+    dif1 = torch.abs(img[..., 1:, :] - img[..., :-1, :])
+    dif2 = torch.abs(img[..., :, 1:] - img[..., :, :-1])
+    return dif1.mean() + dif2.mean()
+
+dy = lambda img: img[..., 1:, :] - img[..., :-1, :]
+dx = lambda img: img[..., :, 1:] - img[..., :, :-1]
+def grad_res_loss(res, loss='L2'):
+    """
+    Computes the loss of the first and second order derivatives of the residual.
+    based on "Shan, Q., Jia, J., & Agarwala, A. (2008). High-quality motion
+    deblurring from a single image. Acm transactions on graphics (tog), 27(3),
+    1-10."
+    """
+    dxres = dx(res); dyres = dy(res)
+    dxxres = dx(dxres); dyyres = dy(dyres); dxyres = dx(dyres)
+    grads = [dxres, dyres, dxxres, dyyres, dxyres]
+    mus = [0.5, 0.5, 0.25, 0.25, 0.25]
+    lossum = 0
+    for mu, grad in zip(mus,grads):
+        if loss.upper()=='L1':
+            lossum += mu * torch.mean(abs(grad))
+        elif loss.upper()=='L2':
+            lossum += mu * torch.mean(grad**2)
+    return lossum
 
 def nmse_torch(truth, estimate):
     """
