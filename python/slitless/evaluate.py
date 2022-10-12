@@ -8,6 +8,45 @@ from slitless.networks.unet import UNet
 from torch.utils.data import DataLoader
 from slitless.data_loader import BasicDataset
 
+def predict(net, meas):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if len(meas.shape)==3:
+        meas = meas[np.newaxis]
+    meas = torch.from_numpy(meas)
+    meas = meas.to(device=device, dtype=torch.float)
+    net = net.to(device)
+    with torch.no_grad():
+        pred = net(meas)
+    pred = pred.squeeze().cpu().numpy()
+    return pred
+
+def net_loader(path):
+    modpath = path+'/best_model.pth'
+    with open(path+'/summary.txt', 'r') as summary_text:
+        lines = summary_text.readlines()
+    parser = lambda key: [i for i in lines if key in i][0].split('= ')[-1].split(' \n')[0]
+    start_filters = int(parser('Number of starting'))
+    outch = parser('Output Channels')
+    out_channels = 3 if outch=='all' else 1
+    ksizes=eval(parser('Kernel Size'))
+    bilinear=eval(parser('Bilinear Interpolation'))
+    numlayers = len(ksizes)
+    numlayers = 4 if numlayers==1 else numlayers
+    net = UNet(
+        in_channels=3,
+        out_channels=out_channels,
+        numlayers=numlayers,
+        outch_type=outch,
+        start_filters=start_filters,
+        bilinear=bilinear,
+        ksizes=ksizes,
+        residual=False)
+    net.load_state_dict(torch.load(modpath))
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    net.to(device)
+    net.eval()
+    return net
+
 def plot_recons(net, valloader, numim, savedir):
     if not os.path.exists(savedir):
         os.mkdir(savedir)
@@ -16,6 +55,7 @@ def plot_recons(net, valloader, numim, savedir):
     numim = min(numim, x.shape[0])
     x = x.to(device=device, dtype=torch.float)
     y = np.array(y.cpu())
+    net.eval()
     with torch.no_grad():
         out = net(x)
     out = np.array(out.cpu())
@@ -113,6 +153,7 @@ def plot_recons(net, valloader, numim, savedir):
 
 def plot_val_stats(net, valloader, savedir):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    net.eval()
     # x, y = next(iter(valloader))
     # x = x.to(device=device, dtype=torch.float)
     # y = np.array(y.cpu())
@@ -157,12 +198,13 @@ def plot_val_stats(net, valloader, savedir):
             rmse0 = nrmse(truth=y1, estimate=outputs, normalization='minmax')
             ssims.extend(ssim0.squeeze())
             rmses.extend(rmse0.squeeze())
-            if net.outch_type == 'all':
-                yvec.extend(y1.transpose(1,0,2,3).reshape(3,-1).transpose(1,0))
-                outvec.extend(outputs.transpose(1,0,2,3).reshape(3,-1).transpose(1,0))
-            else:
-                yvec.extend(y1.transpose(1,0,2,3).reshape(1,-1).transpose(1,0))
-                outvec.extend(outputs.transpose(1,0,2,3).reshape(1,-1).transpose(1,0))
+            if i*valloader.batch_size<10000:
+                if net.outch_type == 'all':
+                    yvec.extend(y1.transpose(1,0,2,3).reshape(3,-1).transpose(1,0))
+                    outvec.extend(outputs.transpose(1,0,2,3).reshape(3,-1).transpose(1,0))
+                else:
+                    yvec.extend(y1.transpose(1,0,2,3).reshape(1,-1).transpose(1,0))
+                    outvec.extend(outputs.transpose(1,0,2,3).reshape(1,-1).transpose(1,0))
 
     ssims = np.array(ssims)
     rmses = np.array(rmses)
@@ -248,6 +290,19 @@ def plot_val_stats(net, valloader, savedir):
         fg.fig.tight_layout()
         plt.savefig(savedir+'linewidth_stats.png', dpi=300)
 
+        # Cross dependence of vel&width errors on intensity
+        fg=sns.jointplot(x=yvec[0], y=outvec[1]-yvec[1], kind='hex', ylim=[-0.4,0.4], gridsize=100)
+        fg.fig.suptitle('Velocity Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
+        fg.set_axis_labels('Intensity', 'Velocity Error')
+        fg.fig.tight_layout()
+        plt.savefig(savedir+'velocity_stats_vs_inten.png', dpi=300)
+        fg=sns.jointplot(x=yvec[0], y=outvec[2]-yvec[2], kind='hex', ylim=[-0.5,0.5], gridsize=100)
+        fg.fig.suptitle('Linewidth Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
+        fg.set_axis_labels('Intensity', 'Linewidth Error')
+        fg.fig.tight_layout()
+        plt.savefig(savedir+'linewidth_stats_vs_inten.png', dpi=300)
+
+
     if net.outch_type == 'int':
         fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', ylim=[-0.1,0.1], gridsize=100)
         fg.fig.suptitle('Intensity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
@@ -272,28 +327,32 @@ def plot_val_stats(net, valloader, savedir):
     return ssims, rmses, yvec, outvec
 
 if __name__ == '__main__':
-    foldname0 = '2022_07_30__15_54_58*'
-    foldpath = glob.glob('../results/saved/'+foldname0)[0]
-    modpath = foldpath+'/best_model.pth'
+    foldname0 = '2022_10_05__23_48*'
+    foldpath = glob.glob('../results/saved/'+foldname0)[0]+'/'
+    # modpath = foldpath+'best_model.pth'
+    modpath = foldpath+'nf_64_LR_0.001_EP_50.pth'
     net = UNet(
         in_channels=3,
-        out_channels=1,
-        numlayers=2,
-        outch_type='vel',
-        start_filters=128,
+        out_channels=3,
+        numlayers=4,
+        outch_type='all',
+        start_filters=64,
         bilinear=True,
-        ksizes=[(5,1),(3,1)],
+        ksizes=[(3,1),(3,1),(3,1),(3,1)],
         residual=False)
     net.load_state_dict(torch.load(modpath))
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.to(device)
-    dataset_path = glob.glob('../../data/datasets/dset3*')[0]
-    dataset = BasicDataset(data_dir = dataset_path, fold='train')
+    net.eval()
+    dataset_path = glob.glob('../../data/datasets/dset5*')[0]
+    fold = 'train'
+    dataset = BasicDataset(data_dir = dataset_path, fold=fold)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    savedir = foldpath+'/train_results/'
+    savedir = foldpath
+    savedir = foldpath+f'{fold}_results_last/'
     if not os.path.exists(savedir):
         os.mkdir(savedir)
 
-    # ssims, rmses, yvec, outvec = plot_val_stats(net, dataloader, savedir)
+    ssims, rmses, yvec, outvec = plot_val_stats(net, dataloader, savedir)
     plot_recons(net, dataloader, 32, savedir+'figures/')
