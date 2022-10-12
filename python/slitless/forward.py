@@ -150,8 +150,8 @@ class Source():
         width (ndarray): 2d array of line width values. Expects either the units
             of pixels with the pix=True, or [A] with pix=False argument.
         wavelength (float): wavelenght of interest in [A].
-        pix (bool): True if the input vel & width are given in pixel units;
-            False otherwise.
+        pix (bool): set to True if the input vel & width are given in pixel
+        units; False otherwise.
     
     Attributes:
         inten
@@ -176,23 +176,29 @@ class Source():
         self.wavelength = wavelength
         self.param3d = np.stack((inten, vel, width))
         self.pix = pix
-    def plot(self, title=''):
+    def plot(self, title='', ssims=None, rmses=None):
+        str_int = 'Intensity'
+        str_vel = 'Velocity [pix]' if self.pix else 'Velocity [km/s]'
+        str_width = 'Linewidth [pix]' if self.pix else 'Linewidth [A]'
+        str_int = str_int + '\n SSIM: {:.3f}'.format(ssims[0]) if ssims is not None else str_int
+        str_vel = str_vel + '\n SSIM: {:.3f}'.format(ssims[1]) if ssims is not None else str_vel
+        str_width = str_width + '\n SSIM: {:.3f}'.format(ssims[2]) if ssims is not None else str_width
+        str_int = str_int + '\n RMSE: {:.3f}'.format(rmses[0]) if rmses is not None else str_int
+        str_vel = str_vel + '\n RMSE: {:.3f}'.format(rmses[1]) if rmses is not None else str_vel
+        str_width = str_width + '\n RMSE: {:.3f}'.format(rmses[2]) if rmses is not None else str_width
         fig, ax = plt.subplots(1,3, figsize=(15,5))
         plt.suptitle(title)
         i0=ax[0].imshow(self.inten, cmap='hot')
-        ax[0].set_title('Intensity')
+        ax[0].set_title(str_int)
         fig.colorbar(i0, ax=ax[0])
         i1=ax[1].imshow(self.vel, cmap='seismic')
         fig.colorbar(i1, ax=ax[1])
+        ax[1].set_title(str_vel)
         i2=ax[2].imshow(self.width, cmap='plasma')
         fig.colorbar(i2, ax=ax[2])
-        if hasattr(self, 'pix'):
-            ax[1].set_title('Velocity [pix]')
-            ax[2].set_title('Linewidth [pix]')
-        else:
-            ax[1].set_title('Velocity [km/s]')
-            ax[2].set_title('Linewidth [A]')
+        ax[2].set_title(str_width)
         plt.show()
+
 
 class Imager():
     """
@@ -212,9 +218,9 @@ class Imager():
             the midpoint.
 
     Attributes:
-        pixel_size
-        dispersion
-        dispersion_scale
+        pixel_size [um]
+        dispersion [um/mA]
+        dispersion_scale [mA/pixels]
         spectral_orders
         srpix (Source): a Source instance in pixel units.
         meas3d (dict): dictionary holding the 2d measurement arrays with the 
