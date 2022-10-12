@@ -176,16 +176,16 @@ class Source():
         self.wavelength = wavelength
         self.param3d = np.stack((inten, vel, width))
         self.pix = pix
-    def plot(self, title='', ssims=None, rmses=None):
+    def plot(self, title='', ssims=None, rmses=None, psnrs=None):
         str_int = 'Intensity'
         str_vel = 'Velocity [pix]' if self.pix else 'Velocity [km/s]'
         str_width = 'Linewidth [pix]' if self.pix else 'Linewidth [A]'
-        str_int = str_int + '\n SSIM: {:.3f}'.format(ssims[0]) if ssims is not None else str_int
-        str_vel = str_vel + '\n SSIM: {:.3f}'.format(ssims[1]) if ssims is not None else str_vel
-        str_width = str_width + '\n SSIM: {:.3f}'.format(ssims[2]) if ssims is not None else str_width
-        str_int = str_int + '\n RMSE: {:.3f}'.format(rmses[0]) if rmses is not None else str_int
-        str_vel = str_vel + '\n RMSE: {:.3f}'.format(rmses[1]) if rmses is not None else str_vel
-        str_width = str_width + '\n RMSE: {:.3f}'.format(rmses[2]) if rmses is not None else str_width
+        for name, field in zip(('SSIM', 'RMSE', 'PSNR'),(ssims, rmses, psnrs)):
+            if field is None:
+                continue
+            str_int += '\n {}: {:.3f}'.format(name, field[0])
+            str_vel += '\n {}: {:.3f}'.format(name, field[1])
+            str_width += '\n {}: {:.3f}'.format(name, field[2])
         fig, ax = plt.subplots(1,3, figsize=(15,5))
         plt.suptitle(title)
         i0=ax[0].imshow(self.inten, cmap='hot')
