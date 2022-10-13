@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from skimage.transform import resize
 from skimage.data import camera, shepp_logan_phantom, cell
 from scipy.optimize import minimize
+from mas.decorators import _vectorize
+from scipy.stats import poisson
 
 def gauss(x, mean, sigma):
     return 1 / sigma / (2*np.pi)**0.5 * np.exp(-0.5*((x-mean)/sigma)**2)
@@ -294,6 +296,50 @@ class Imager():
             ax[i].set_title('Order {}'.format(a))
             fig.colorbar(im, ax=ax[i])
         plt.show()
+
+def add_noise(signal, dbsnr=None, max_count=None, model='Poisson', no_noise=False):
+    """
+    Add noise to the given signal at the specified level.
+
+    Args:
+        (ndarray): noise-free input signal
+        dbsnr (float): signal to noise ratio in dB: for Gaussian noise model, it is
+        defined as the ratio of variance of the input signal to the variance of
+        the noise. For Poisson model, it is taken as the average snr where snr
+        of a pixel is given by the square root of its value.
+        max_count (int): Max number of photon counts in the given signal
+        model (string): String that specifies the noise model. The 2 options are
+        `Gaussian` and `Poisson`
+        no_noise (bool): (default=False) If True, return the clean signal
+
+    Returns:
+        ndarray that is the noisy version of the input
+    """
+    if no_noise is True:
+        return signal
+    assert model.lower() in ('gaussian', 'poisson'), "invalid noise model"
+
+    var = torch.var if type(signal)==torch.Tensor else np.var
+    normal = torch.normal if type(signal)==torch.Tensor else np.random.normal
+    poissonrv = torch.poisson if type(signal)==torch.Tensor else poisson.rvs 
+    max = torch.amax if type(signal)==torch.Tensor else np.max
+
+    if model.lower() == 'gaussian':
+        var_sig = var(signal, axis=(-1,-2), keepdims=True)
+        std_noise = (var_sig / 10**(dbsnr / 10))**0.5
+        out = normal(signal, std_noise)
+    elif model.lower() == 'poisson':
+        if max_count is not None:
+            scalar = max_count / max(signal, axis=(-1,-2), keepdims=True)
+            sig_scaled = signal * scalar
+            # print('SNR:{}'.format(np.sqrt(sig_scaled.mean())))
+            out = poissonrv(sig_scaled) / scalar
+        else:
+            avg_brightness = 10**(dbsnr / 20)**2
+            scalar = avg_brightness / signal.mean(axis=(-1,-2), keepdims=True)
+            sig_scaled = signal * scalar
+            out = poissonrv(sig_scaled) / scalar
+    return out
 
 def forward_op_loopy(
     true_intensity=None,

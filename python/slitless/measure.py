@@ -19,13 +19,13 @@ def nrmse(*, truth, estimate, normalization='minmax'):
         norm = 1
     return np.sqrt(np.mean((truth-estimate)**2)) / (norm)
 
-@_vectorize(signature='(a,b),(a,b),()->()', included=['truth', 'estimate', 'maxval'])
-def compare_psnr(*, truth, estimate, maxval=1):
+@_vectorize(signature='(a,b),(a,b)->()', included=['truth', 'estimate'])
+def compare_psnr(*, truth, estimate):
     """
     Computes PSNR.
     maxval is the maximum value that the true array can possibly take.
     """
-    return 10*np.log10(maxval**2/np.mean((truth-estimate)**2))
+    return 10*np.log10(truth.max()**2/np.mean((truth-estimate)**2))
 
 def tv_loss(img):
     """

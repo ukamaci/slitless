@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from torch import optim
 from slitless.data_loader import BasicDataset
-from slitless.forward import Source, Imager, forward_op_torch
+from slitless.forward import Source, Imager, forward_op_torch, add_noise
 from slitless.measure import cycle_loss, compare_ssim, compare_psnr, tv_loss, grad_res_loss
 from tqdm.auto import tqdm
 
@@ -33,26 +33,28 @@ USE_OPTIMIZER = True
 USE_TV_LOSS = True
 GRAD_RES_LOSS = False
 DATA_FIDELITY = 'L2' # 'L1' or 'L2'
-maxiters = 20000
+maxiters = 40000
+snrdb = 35
 mu_vel = 1e1 # GD step size for vel
 mu_width = 1e1 # GD step size for width
-lam_v = 1e-2 # TV norm regularization parameter for velocity
-lam_w = 1e-1 # TV norm regularization parameter for width
-regparamdec = 6 # TV regu. param. exp.tial decay (set to 0 for no decay)
+lam_v = 1e-3 # TV norm regularization parameter for velocity
+lam_w = 1e-2 # TV norm regularization parameter for width
+regparamdec = 1 # TV regu. param. exp.tial decay (set to 0 for no decay)
 beta = 10**(-regparamdec/maxiters) # TV reg. param. multiplier
 LR = 1e-2
 losses = []
 diffs_vel = []
 diffs_width = []
 
-meas = torch.from_numpy(imgr.meas3dar).to(device=device, dtype=torch.float)
+meas = add_noise(imgr.meas3dar, dbsnr=snrdb, model='Poisson')
+meas = torch.from_numpy(meas).to(device=device, dtype=torch.float)
 x = x.to(device=device, dtype=torch.float)
 
 xh_int = x[0,0]
 xh_vel = torch.zeros(
     (meas.shape[1],meas.shape[2]), device=device, dtype=torch.float, requires_grad=True)
 # xh_vel = x[0,1]
-xh_width = 1*torch.ones((meas.shape[1],meas.shape[2]), device=device, dtype=torch.float)
+xh_width = 0.25*torch.ones((meas.shape[1],meas.shape[2]), device=device, dtype=torch.float)
 xh_width = xh_width.requires_grad_()
 # xh_width = x[0,2]
 optimizer = optim.Adam([xh_vel, xh_width], lr=LR)
@@ -104,21 +106,21 @@ for i in tqdm(range(maxiters)):
 
 # %% plots
 plt.figure()
-plt.plot(losses)
+plt.semilogy(losses)
 plt.title('Loss vs Iter')
 plt.xlabel('Iter')
 plt.ylabel('Loss')
 plt.show()
 
 plt.figure()
-plt.plot(diffs_vel)
+plt.semilogy(diffs_vel)
 plt.title('||x_vel-xh_vel|| vs Iter')
 plt.xlabel('Iter')
 plt.ylabel('||x_vel-xh_vel||')
 plt.show()
 
 plt.figure()
-plt.plot(diffs_width)
+plt.semilogy(diffs_width)
 plt.title('||x_width-xh_width|| vs Iter')
 plt.xlabel('Iter')
 plt.ylabel('||x_width-xh_width||')
@@ -132,7 +134,7 @@ sr2 = Source(
 )
 ssims = compare_ssim(truth=sr.param3d, estimate=sr2.param3d)
 # assume maxval for (int,vel,width)=(1,2,2.5)
-psnrs = compare_psnr(truth=sr.param3d, estimate=sr2.param3d, maxval=(1,2,2.5))
+psnrs = compare_psnr(truth=sr.param3d, estimate=sr2.param3d)
 
 sr.plot('Original')
 plt.tight_layout()
