@@ -176,9 +176,14 @@ class Source():
         self.vel = vel
         self.width = width
         self.wavelength = wavelength
-        self.param3d = np.stack((inten, vel, width))
+        stack = torch.stack if type(self.inten)==torch.Tensor else np.stack
+        self.param3d = stack((inten, vel, width))
         self.pix = pix
     def plot(self, title='', ssims=None, rmses=None, psnrs=None):
+        if type(self.inten)==torch.Tensor:
+            inten, vel, width = inten.cpu().numpy(), vel.cpu().numpy(), width.cpu().numpy()
+        else:
+            inten, vel, width = self.inten, self.vel, self.width
         str_int = 'Intensity'
         str_vel = 'Velocity [pix]' if self.pix else 'Velocity [km/s]'
         str_width = 'Linewidth [pix]' if self.pix else 'Linewidth [A]'
@@ -190,13 +195,13 @@ class Source():
             str_width += '\n {}: {:.3f}'.format(name, field[2])
         fig, ax = plt.subplots(1,3, figsize=(15,5))
         plt.suptitle(title)
-        i0=ax[0].imshow(self.inten, cmap='hot')
+        i0=ax[0].imshow(inten, cmap='hot')
         ax[0].set_title(str_int)
         fig.colorbar(i0, ax=ax[0])
-        i1=ax[1].imshow(self.vel, cmap='seismic')
+        i1=ax[1].imshow(vel, cmap='seismic')
         fig.colorbar(i1, ax=ax[1])
         ax[1].set_title(str_vel)
-        i2=ax[2].imshow(self.width, cmap='plasma')
+        i2=ax[2].imshow(width, cmap='plasma')
         fig.colorbar(i2, ax=ax[2])
         ax[2].set_title(str_width)
         plt.show()
@@ -265,7 +270,7 @@ class Imager():
 
     def get_measurements(
         self,
-        sources,
+        sources
     ):
         """
         Given a Source object, simulate and save measurements as an attribute 
@@ -278,15 +283,16 @@ class Imager():
             self.topix(sources)
         else:
             self.srpix = sources
-        meas3d = forward_op(
-            param3d=self.srpix.param3d,
+
+        fwd_op = forward_op_torch if type(sources.inten)==torch.Tensor else forward_op
+
+        self.meas3dar = fwd_op(
+            true_intensity=self.srpix.inten,
+            true_doppler=self.srpix.vel,
+            true_linewidth=self.srpix.width,
             spectral_orders=self.spectral_orders,
             pixelated=self.pixelated
         )
-        self.meas3d = {}
-        for ct,i in enumerate(self.spectral_orders):
-            self.meas3d[str(i)] = meas3d[ct]
-        self.meas3dar = meas3d
 
     def plot(self, title=''):
         fig, ax = plt.subplots(1,len(self.spectral_orders), figsize=(15,5))
@@ -302,7 +308,7 @@ def add_noise(signal, dbsnr=None, max_count=None, model='Poisson', no_noise=Fals
     Add noise to the given signal at the specified level.
 
     Args:
-        (ndarray): noise-free input signal
+        signal (ndarray): noise-free input signal
         dbsnr (float): signal to noise ratio in dB: for Gaussian noise model, it is
         defined as the ratio of variance of the input signal to the variance of
         the noise. For Poisson model, it is taken as the average snr where snr
@@ -319,26 +325,27 @@ def add_noise(signal, dbsnr=None, max_count=None, model='Poisson', no_noise=Fals
         return signal
     assert model.lower() in ('gaussian', 'poisson'), "invalid noise model"
 
-    var = torch.var if type(signal)==torch.Tensor else np.var
-    normal = torch.normal if type(signal)==torch.Tensor else np.random.normal
-    poissonrv = torch.poisson if type(signal)==torch.Tensor else poisson.rvs 
-    max = torch.amax if type(signal)==torch.Tensor else np.max
+    sig = signal.cpu().numpy() if type(signal)==torch.Tensor else signal
 
     if model.lower() == 'gaussian':
-        var_sig = var(signal, axis=(-1,-2), keepdims=True)
+        var_sig = np.var(sig, axis=(-1,-2), keepdims=True)
         std_noise = (var_sig / 10**(dbsnr / 10))**0.5
-        out = normal(signal, std_noise)
+        out = np.random.normal(sig, std_noise)
     elif model.lower() == 'poisson':
         if max_count is not None:
-            scalar = max_count / max(signal, axis=(-1,-2), keepdims=True)
-            sig_scaled = signal * scalar
+            scalar = max_count / np.max(sig, axis=(-1,-2), keepdims=True)
+            sig_scaled = sig * scalar
             # print('SNR:{}'.format(np.sqrt(sig_scaled.mean())))
-            out = poissonrv(sig_scaled) / scalar
+            out = poisson.rvs(sig_scaled) / scalar
         else:
             avg_brightness = 10**(dbsnr / 20)**2
-            scalar = avg_brightness / signal.mean(axis=(-1,-2), keepdims=True)
-            sig_scaled = signal * scalar
-            out = poissonrv(sig_scaled) / scalar
+            scalar = avg_brightness / sig.mean(axis=(-1,-2), keepdims=True)
+            sig_scaled = sig * scalar
+            out = poisson.rvs(sig_scaled) / scalar
+
+    if type(signal)==torch.Tensor:
+        out = torch.from_numpy(out).to(device=signal.device, dtype=signal.dtype)
+
     return out
 
 def forward_op_loopy(

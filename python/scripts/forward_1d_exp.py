@@ -26,19 +26,19 @@ imgr = Imager(
 )
 
 imgr.get_measurements(sr)
-meas = imgr.meas3d
+meas = imgr.meas3dar
 
 fig, ax = plt.subplots(5,1, figsize=(6.4,10))
 fig.suptitle('Measurements')
-ax[0].stem(meas['0'])
+ax[0].stem(meas[0])
 ax[0].set_title('Order 0')
-ax[1].stem(meas['-1'])
+ax[1].stem(meas[1])
 ax[1].set_title('Order -1')
-ax[2].stem(meas['1'])
+ax[2].stem(meas[2])
 ax[2].set_title('Order +1')
-ax[3].stem(meas['1']+meas['-1'])
+ax[3].stem(meas[1]+meas[2])
 ax[3].set_title('Sum of Order +1&-1')
-ax[4].stem(abs(meas['1']-meas['-1']))
+ax[4].stem(abs(meas[2]-meas[1]))
 ax[4].set_title('Abs Diff of Order +1&-1')
 plt.tight_layout()
 plt.show()
