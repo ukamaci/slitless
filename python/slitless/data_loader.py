@@ -109,7 +109,7 @@ class OntheflyDataset(Dataset):
         )
 
         params = np.stack((inten, vel, width))
-        meas = add_noise(meas3dar, dbsnr=self.dbsnr, no_noise=self.dbsnr==None)
+        meas = add_noise(meas3dar, dbsnr=self.dbsnr, no_noise=self.dbsnr==None, model='Gaussian')
 
         if self.transform is not None:
             meas = self.transform(meas)

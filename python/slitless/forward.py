@@ -303,7 +303,7 @@ class Imager():
             fig.colorbar(im, ax=ax[i])
         plt.show()
 
-def add_noise(signal, dbsnr=None, max_count=None, model='Poisson', no_noise=False):
+def add_noise(signal, dbsnr=None, max_count=None, model='Gaussian', no_noise=False):
     """
     Add noise to the given signal at the specified level.
 
