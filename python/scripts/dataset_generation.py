@@ -98,8 +98,20 @@ def dataset_visualizer(path, ind=None):
     )
     sr.plot(title=f'data {ind+1}')
 
-
-
+def imagenet_datasetter():
+    pathdset = '/home/kamo/resources/slitless/data/datasets/imagenet64_train_p1/'
+    d1 = np.load(pathdset+'train_data_batch_1.npz')['data']
+    d2 = np.load(pathdset+'train_data_batch_2.npz')['data']
+    d = np.concatenate((d1,d2))[:180000]
+    dg = []
+    for i in range(len(d)//10000):
+        print(i)
+        temp = np.rot90(rgb2gray(d[i*10000:(i+1)*10000].reshape(-1,64,64,3, order='F')), axes=(2,1))
+        dg.extend(temp)
+    dg = np.array(dg)
+    np.save(pathdset+'first_150k_gray_rot90.npy', dg[:150000])
+    np.save(pathdset+'second_15k_gray_rot90.npy', dg[150000:165000])
+    np.save(pathdset+'third_15k_gray_rot90.npy', dg[165000:180000])
 
 # %% fwd
 def fwd_meas(i):
@@ -148,8 +160,8 @@ def fwd_meas(i):
     )
     imgr.get_measurements(sr)
     out = {'int': int_ar, 'vel': vel_ar, 'width': width_ar}
-    for j in imgr.spectral_orders:
-        out[f'meas_{j}'] = imgr.meas3d[str(j)]
+    for k,j in enumerate(imgr.spectral_orders):
+        out[f'meas_{j}'] = imgr.meas3dar[k]
     np.save(path_save+f'data_{i}.npy', out)
 
 if __name__ == '__main__':
