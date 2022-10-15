@@ -82,7 +82,8 @@ def forward_op_torch(
     true_doppler=None,
     true_linewidth=None,
     pixelated=False,
-    spectral_orders=[0,-1,1]):
+    spectral_orders=[0,-1,1],
+    device=None):
     """
     Given 2d (or 3d where the first dimension is batch dim) arrays of intensity,
     doppler, and linewidth, calculate the noise free measurements at the
@@ -105,7 +106,9 @@ def forward_op_torch(
         ordering.
     """
     gauss_func = gauss_pix_torch if pixelated else gauss_torch
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device == None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if len(true_intensity.shape) == 2:
         true_intensity = true_intensity[None]
         true_doppler = true_doppler[None]
