@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import datetime
 
-from slitless.data_loader import BasicDataset
+from slitless.data_loader import BasicDataset, OntheflyDataset2
 from slitless.networks.unet import UNet
 from slitless.measure import nrmse, nmse_torch, combine_losses, cycle_loss
 import numpy as np
@@ -29,6 +29,10 @@ def train_net(net,
     best_valloss = 1e6
 
     for epoch in tqdm(range(epochs)):  # loop over the dataset multiple times
+
+        if epoch>0:
+            trainset = OntheflyDataset2(data_dir=trainloader.dataset.data_dir, fold='train', dbsnr=trainloader.dataset.dbsnr)
+            trainloader = DataLoader(trainset, batch_size=trainloader.batch_size, shuffle=True, num_workers=0)
 
         net.train()
         running_loss = 0.0
@@ -86,22 +90,22 @@ if __name__ == '__main__':
     NUM_FILT = 64
     numlayers = 4
     LR = 1e-3
-    EPOCHS = 10
-    BATCH_SIZE = 8
+    EPOCHS = 30
+    BATCH_SIZE = 4
     BILINEAR = True
     ksizes = [(3,1), (3,1), (3,1), (3,1)]
     OPTIMIZER = 'ADAM'
     LOSS = 'MSE'
     # LOSS = 'NMSE'
-    CYC_LOSS = True
+    CYC_LOSS = False
     cyc_lam = 1
-    CYC_ONLY = True
+    CYC_ONLY = False
     LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
     OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
     LOAD = True
     loaded_model_path = '../results/saved/2022_10_08__18_57_19_NF_64_BS_8_LR_0.001_EP_10_KSIZE_(3, 1)_CYCLE_ONLY_LOSS_ADAM_all/best_model.pth'
-    dataset_path = glob.glob('../../data/datasets/dset5*')[0]
+    dataset_path = glob.glob('../../data/datasets/dset6*')[0]
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
     name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}'
@@ -120,12 +124,18 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    trainset = BasicDataset(data_dir = dataset_path, fold='train')
-    valset = BasicDataset(data_dir = dataset_path, fold='val')
-    testset = BasicDataset(data_dir = dataset_path, fold='test')
-    trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True)
-    valloader = DataLoader(valset, batch_size=32, shuffle=True)
-    testloader = DataLoader(testset, batch_size=32, shuffle=True)
+    # trainset = BasicDataset(data_dir = dataset_path, fold='train')
+    # valset = BasicDataset(data_dir = dataset_path, fold='val')
+    # testset = BasicDataset(data_dir = dataset_path, fold='test')
+    # trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True)
+    # valloader = DataLoader(valset, batch_size=32, shuffle=True)
+    # testloader = DataLoader(testset, batch_size=32, shuffle=True)
+
+    trainset = OntheflyDataset2(data_dir=dataset_path, fold='train', dbsnr=35)
+    trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    valset = OntheflyDataset2(data_dir=dataset_path, fold='val', dbsnr=35)
+    valloader = DataLoader(valset, batch_size=32, shuffle=True, num_workers=0)
+
 
     net = UNet(
         in_channels=3,
@@ -223,6 +233,9 @@ if __name__ == '__main__':
 
     net.load_state_dict(torch.load(f'../results/saved/{name}/best_model.pth'))
 
+    testset = BasicDataset(data_dir=dataset_path, fold='test', dbsnr=35)
+    testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=0)
+
     savedir = f'../results/saved/{name}/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
     plot_recons(net, testloader, numim=32, savedir=savedir+'figures/')
@@ -299,7 +312,7 @@ if __name__ == '__main__':
     training_summary += [
         f'Training Time: {str(train_time)} \n',
         '\n############## Notes ############## \n',
-        'Training only with the cycle loss to see what happens. \n',
+        'First trial of the on-the-fly imagenet dataset. \n',
         '\n############## Comments ############## \n'
     ]
 
