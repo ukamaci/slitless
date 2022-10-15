@@ -33,20 +33,21 @@ USE_OPTIMIZER = True
 USE_TV_LOSS = True
 GRAD_RES_LOSS = False
 DATA_FIDELITY = 'L2' # 'L1' or 'L2'
-maxiters = 40000
+maxiters = 20000
 snrdb = 35
 mu_vel = 1e1 # GD step size for vel
 mu_width = 1e1 # GD step size for width
 lam_v = 1e-3 # TV norm regularization parameter for velocity
-lam_w = 1e-2 # TV norm regularization parameter for width
-regparamdec = 1 # TV regu. param. exp.tial decay (set to 0 for no decay)
+lam_w = 1e-0 # TV norm regularization parameter for width
+regparamdec = 4 # TV regu. param. exp.tial decay (set to 0 for no decay)
 beta = 10**(-regparamdec/maxiters) # TV reg. param. multiplier
+lammin = 1e-3
 LR = 1e-2
 losses = []
 diffs_vel = []
 diffs_width = []
 
-meas = add_noise(imgr.meas3dar, dbsnr=snrdb, model='Poisson')
+meas = add_noise(imgr.meas3dar, dbsnr=snrdb, model='Gaussian')
 meas = torch.from_numpy(meas).to(device=device, dtype=torch.float)
 x = x.to(device=device, dtype=torch.float)
 
@@ -74,7 +75,7 @@ for i in tqdm(range(maxiters)):
     if GRAD_RES_LOSS:
         loss += grad_res_loss(res, loss=DATA_FIDELITY)
     if USE_TV_LOSS:
-        loss += beta**i*(lam_v*tv_loss(xh_vel) + lam_w*tv_loss(xh_width))
+        loss += max(lammin,beta**i)*(lam_v*tv_loss(xh_vel) + lam_w*tv_loss(xh_width))
     loss.backward()
 
     if USE_OPTIMIZER:
