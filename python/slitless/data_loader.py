@@ -59,7 +59,7 @@ class BasicDataset(Dataset):
 
 class OntheflyDataset(Dataset):
     def __init__(self, data_dir, fold='train', transform=None,
-        target_transform=None, dbsnr=None):
+        target_transform=None, dbsnr=None, trpart=None):
         self.data_dir = data_dir
         self.data = []
         self.train = False
@@ -67,6 +67,7 @@ class OntheflyDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.dbsnr = dbsnr
+        self.trpart = trpart
 
         if fold == 'train':
             self.train = True
@@ -75,66 +76,10 @@ class OntheflyDataset(Dataset):
 
         self.task_dir = os.path.join(self.data_dir, fold)
 
-        file = glob.glob(self.task_dir+'/otf*npy')[0]
-        self.data = np.load(file)
-
-        self.transform = transform
-        self.target_transform = target_transform
-
-    def __len__(self):
-        return len(self.data) // 3
-
-    def __getitem__(self, idx):
-        inten, vel, width = self.data[3*idx:3*idx+3]
-
-        vel_max = 2 # pixels
-        width_max = 2.5 # pixels
-        width_min = 1 # pixels
-
-        v0, v1 = np.random.uniform(0, vel_max, 2) * [-1,1]
-        w0, w1 = np.sort(np.random.uniform(width_min, width_max, 2))
-        
-        vel = vel * (v1 - v0) + v0
-        width = width * (w1 - w0) + w0
-
-        meas3dar = forward_op(
-            true_intensity=inten,
-            true_doppler=vel,
-            true_linewidth=width,
-            spectral_orders=[0,-1,1],
-            pixelated=True
-        )
-
-        params = np.stack((inten, vel, width))
-        meas = add_noise(meas3dar, dbsnr=self.dbsnr, no_noise=self.dbsnr==None, model='Gaussian')
-
-        if self.transform is not None:
-            meas = self.transform(meas)
-
-        if self.target_transform is not None:
-            params = self.target_transform(params)
-
-        return meas, params
-
-class OntheflyDataset2(Dataset):
-    def __init__(self, data_dir, fold='train', transform=None,
-        target_transform=None, dbsnr=None):
-        self.data_dir = data_dir
-        self.data = []
-        self.train = False
-        self.val = False
-        self.transform = transform
-        self.target_transform = target_transform
-        self.dbsnr = dbsnr
-
-        if fold == 'train':
-            self.train = True
-        elif fold == 'val':
-            self.val = True
-
-        self.task_dir = os.path.join(self.data_dir, fold)
-
-        file = glob.glob(self.task_dir+'/otf*npy')[0]
+        if trpart is None:
+            file = glob.glob(self.task_dir+'/otf*npy')[0]
+        else:
+            file = glob.glob(self.task_dir+'/otf_p{}*npy'.format(trpart))[0]
         data = np.load(file)
         intens, vels, widths = data.reshape(3,-1,64,64)
 
@@ -155,10 +100,9 @@ class OntheflyDataset2(Dataset):
         widths = torch.from_numpy(widths).to(device=device, dtype=torch.float)
 
         meas = []
-        nb = 50
-        ind = len(intens) // nb
+        ind = 1000
 
-        for i in range(nb):
+        for i in range(len(intens) // ind):
             meas.extend(forward_op_torch(
                 true_intensity=intens[i*ind:(i+1)*ind],
                 true_doppler=vels[i*ind:(i+1)*ind],

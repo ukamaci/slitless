@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import datetime
 
-from slitless.data_loader import BasicDataset, OntheflyDataset2
+from slitless.data_loader import BasicDataset, OntheflyDataset
 from slitless.networks.unet import UNet
 from slitless.measure import nrmse, nmse_torch, combine_losses, cycle_loss
 import numpy as np
@@ -15,24 +15,28 @@ import matplotlib.pyplot as plt
 from slitless.evaluate import plot_recons, plot_val_stats
 
 def train_net(net,
-              device,
-              trainloader,
-              valloader,
-              epochs,
-              optimizer,
-              criterion,
-              path
+            device,
+            trainloader,
+            otf,
+            valloader,
+            epochs,
+            optimizer,
+            criterion,
+            path
 ):
 
     train_loss_over_epochs = []
     val_loss_over_epochs = []
     best_valloss = 1e6
+    modnum = 5 if otf is not None else 1
 
     for epoch in tqdm(range(epochs)):  # loop over the dataset multiple times
 
-        if epoch>0:
-            trainset = OntheflyDataset2(data_dir=trainloader.dataset.data_dir, fold='train', dbsnr=trainloader.dataset.dbsnr)
-            trainloader = DataLoader(trainset, batch_size=trainloader.batch_size, shuffle=True, num_workers=0)
+        # if onthefly dataloading is active, then read the parameters from otf
+        # and create the next trainset 
+        if otf is True:
+            trainset = OntheflyDataset(data_dir=trainloader.dataset.data_dir, fold='train', dbsnr=trainloader.dataset.dbsnr, trpart=epoch%5+1)
+            trainloader = DataLoader(trainset, batch_size=trainloader.batch_size, shuffle=True, num_workers=trainloader.num_workers)
 
         net.train()
         running_loss = 0.0
@@ -60,28 +64,29 @@ def train_net(net,
         running_loss/=len(trainloader)
         logging.info('[%d] Train loss: %.7f' % (epoch + 1, running_loss))
 
-        net.eval()
-        running_valloss = 0.0
-        for i, data in enumerate(valloader):
-            # get the inputs
-            inputs = data[0].to(device=device, dtype=torch.float)
-            true_outputs = data[1].to(device=device, dtype=torch.float)
+        if (epoch+1)%modnum==0:
+            net.eval()
+            running_valloss = 0.0
+            for i, data in enumerate(valloader):
+                # get the inputs
+                inputs = data[0].to(device=device, dtype=torch.float)
+                true_outputs = data[1].to(device=device, dtype=torch.float)
 
-            with torch.no_grad():
-                outputs = net(inputs)
-                loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
+                with torch.no_grad():
+                    outputs = net(inputs)
+                    loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
 
-                running_valloss += loss.item()
+                    running_valloss += loss.item()
 
-        running_valloss/=len(valloader)
-        logging.info('Validation loss: %.7f' % (running_valloss))
+            running_valloss/=len(valloader)
+            logging.info('Validation loss: %.7f' % (running_valloss))
 
-        if running_valloss < best_valloss:
-            best_valloss = running_valloss*1
-            torch.save(net.state_dict(), f'../results/saved/{name}/best_model.pth')
+            if running_valloss < best_valloss:
+                best_valloss = running_valloss*1
+                torch.save(net.state_dict(), f'../results/saved/{name}/best_model.pth')
 
-        train_loss_over_epochs.append(running_loss)
-        val_loss_over_epochs.append(running_valloss)
+            train_loss_over_epochs.append(running_loss)
+            val_loss_over_epochs.append(running_valloss)
 
     return train_loss_over_epochs, val_loss_over_epochs, net
 
@@ -90,7 +95,7 @@ if __name__ == '__main__':
     NUM_FILT = 64
     numlayers = 4
     LR = 1e-3
-    EPOCHS = 30
+    EPOCHS = 400
     BATCH_SIZE = 4
     BILINEAR = True
     ksizes = [(3,1), (3,1), (3,1), (3,1)]
@@ -103,12 +108,14 @@ if __name__ == '__main__':
     LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
     OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
-    LOAD = True
-    loaded_model_path = '../results/saved/2022_10_08__18_57_19_NF_64_BS_8_LR_0.001_EP_10_KSIZE_(3, 1)_CYCLE_ONLY_LOSS_ADAM_all/best_model.pth'
+    LOAD = False
+    otf = True # on the fly trainset generation 
+    loaded_model_path = '../results/saved/2022_10_14__22_24_44_NF_64_BS_4_LR_0.001_EP_30_KSIZE_(3, 1)_MSE_LOSS_ADAM_all/best_model.pth'
     dataset_path = glob.glob('../../data/datasets/dset6*')[0]
+    dbsnr = 25
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-    name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}'
+    name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}'
     if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
     os.mkdir('../results/saved/'+name)
@@ -131,11 +138,10 @@ if __name__ == '__main__':
     # valloader = DataLoader(valset, batch_size=32, shuffle=True)
     # testloader = DataLoader(testset, batch_size=32, shuffle=True)
 
-    trainset = OntheflyDataset2(data_dir=dataset_path, fold='train', dbsnr=35)
-    trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
-    valset = OntheflyDataset2(data_dir=dataset_path, fold='val', dbsnr=35)
-    valloader = DataLoader(valset, batch_size=32, shuffle=True, num_workers=0)
-
+    trainset = OntheflyDataset(data_dir=dataset_path, fold='train', dbsnr=dbsnr)
+    trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
+    valset = OntheflyDataset(data_dir=dataset_path, fold='val', dbsnr=dbsnr)
+    valloader = DataLoader(valset, batch_size=32, shuffle=True, num_workers=8)
 
     net = UNet(
         in_channels=3,
@@ -195,8 +201,9 @@ if __name__ == '__main__':
     f'Num Epochs = {EPOCHS} \n',
     f'Training Batch Size = {BATCH_SIZE} \n',
     '\n############## Data Parameters ############## \n',
-    f'Num of Tranining Images = {len(trainset)} \n',
+    f'Num of Tranining Images = {len(trainset)*5 if otf else len(trainset)} \n',
     f'Num of Validation Images = {len(valset)} \n',
+    f'Dataset Path = {dataset_path} \n',
     ]
 
     with open(f'../results/saved/{name}/summary.txt', 'w') as file:
@@ -208,6 +215,7 @@ if __name__ == '__main__':
         trainloss, valloss, net = train_net(net=net,
                   device=device,
                   trainloader=trainloader,
+                  otf=otf,
                   valloader=valloader,
                   epochs=EPOCHS,
                   optimizer=optimizer,
@@ -233,8 +241,8 @@ if __name__ == '__main__':
 
     net.load_state_dict(torch.load(f'../results/saved/{name}/best_model.pth'))
 
-    testset = BasicDataset(data_dir=dataset_path, fold='test', dbsnr=35)
-    testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=0)
+    testset = BasicDataset(data_dir=dataset_path, fold='test', dbsnr=dbsnr)
+    testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=8)
 
     savedir = f'../results/saved/{name}/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
@@ -312,7 +320,7 @@ if __name__ == '__main__':
     training_summary += [
         f'Training Time: {str(train_time)} \n',
         '\n############## Notes ############## \n',
-        'First trial of the on-the-fly imagenet dataset. \n',
+        'Training with on onthefly imagenet with ksize=(3,1), dbsnr=25.\n',
         '\n############## Comments ############## \n'
     ]
 
