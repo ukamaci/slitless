@@ -195,7 +195,7 @@ def plot_val_stats(net, valloader, savedir):
             outputs = net(inputs)
             outputs = np.array(outputs.cpu())
             ssim0 = compare_ssim(truth=y1, estimate=outputs)
-            rmse0 = nrmse(truth=y1, estimate=outputs, normalization='minmax')
+            rmse0 = nrmse(truth=y1, estimate=outputs, normalization=None)
             ssims.extend(ssim0.squeeze())
             rmses.extend(rmse0.squeeze())
             if i*valloader.batch_size<10000:

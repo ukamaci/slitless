@@ -10,7 +10,7 @@ def compare_ssim(*, truth, estimate):
     return skimage_ssim(estimate, truth, data_range=np.max(truth) - np.min(truth))
 
 @_vectorize(signature='(a,b),(a,b)->()', included=['truth', 'estimate'])
-def nrmse(*, truth, estimate, normalization='minmax'):
+def nrmse(*, truth, estimate, normalization=None):
     if normalization=='sigma':
         norm = np.std(truth)
     elif normalization=='minmax':
