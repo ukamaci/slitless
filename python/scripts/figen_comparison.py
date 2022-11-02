@@ -7,7 +7,7 @@ from slitless.measure import compare_ssim, nrmse
 from slitless.recon import grad_descent_solver
 import matplotlib
 
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 
 figpath = '/home/kamo/resources/slitless/figures/tmp/'
 
@@ -60,12 +60,12 @@ rmses_fig = nrmse(truth=sr_true.param3d, estimate=sr_fig.param3d)
 im = Imager(pixelated=True)
 im.get_measurements(sr_true)
 
-sr_true.plot('Sources')
-plt.savefig(figpath+'sources.png')
-sr_fig.plot('Figen Estimates', ssims=ssims_fig, rmses=rmses_fig)
-plt.savefig(figpath+'figo.png')
-im.plot('Kamo Meas')
-plt.savefig(figpath+'meas.png')
+# sr_true.plot('Sources')
+# plt.savefig(figpath+'sources.png')
+# sr_fig.plot('Figen Estimates', ssims=ssims_fig, rmses=rmses_fig)
+# plt.savefig(figpath+'figo.png')
+# im.plot('Kamo Meas')
+# plt.savefig(figpath+'meas.png')
 
 foldname0 = '2022_08_06__14_36_01*'
 foldpath = glob.glob('../results/saved/'+foldname0)[0]
@@ -88,13 +88,17 @@ pred_width = predict(net_width, meas3d)
 # meass[:,-4:] = meas3d[:,-4:]
 meass = meas3d
 
-_, gd_vel, gd_width, gd_loss, gd_widths, gd_vels = grad_descent_solver(
+gd_recon, gd_loss, xhs = grad_descent_solver(
     meass, 
+    lam_i=1e-7,
     lam_v=2e-2,
     lam_w=2e-2,
-    maxiters=20000,
-    LR=1e-2
+    maxiters=4000,
+    LR=1e-2,
+    return_arrays=True
 )
+gd_int, gd_vel, gd_width = gd_recon
+_, gd_vels, gd_widths = xhs.transpose(1,0,2,3)
 
 sr_unet = Source(
     inten=meas_0,
@@ -104,7 +108,7 @@ sr_unet = Source(
 )
 
 sr_gd = Source(
-    inten=meas_0,
+    inten=gd_int,
     vel=gd_vel,
     width=gd_width,
     pix=True

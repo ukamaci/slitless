@@ -1,143 +1,162 @@
 # 2022-08-09 Ulas Kamaci
 # Gradient descent for slitless using PyTorch Autograd
-import torch, glob
+import torch, glob, copy, datetime, os
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from torch import optim
 from slitless.data_loader import BasicDataset
 from slitless.forward import Source, Imager, forward_op_torch, add_noise
-from slitless.measure import cycle_loss, compare_ssim, compare_psnr, tv_loss, grad_res_loss
+from slitless.measure import cycle_loss, compare_ssim, compare_psnr, nrmse, tv_loss, grad_res_loss
+from slitless.evaluate import plot_recons_gd, stat_plotter, joint_plotter
+from slitless.recon import grad_descent_solver
 from tqdm.auto import tqdm
 
-dataset_path = glob.glob('/home/kamo/resources/slitless/data/datasets/dset3*')[0]
-dataset = BasicDataset(data_dir = dataset_path, fold='train')
-dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+numim=10
+# dataset_path = glob.glob('/home/kamo/resources/slitless/data/datasets/dset6*')[0]
+dataset_path = glob.glob('/home/kamo/resources/slitless/data/eis_data/eistest64*')[0]
+dataset = BasicDataset(data_dir = dataset_path, fold='test')
+# numim=len(dataset)
+dataloader = DataLoader(dataset, batch_size=numim, shuffle=False)
 _, x = next(iter(dataloader))
+pixelated = True
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-sr = Source(
-    inten=np.array(x[0,0]),
-    vel=np.array(x[0,1]),
-    width=np.array(x[0,2]),
-    pix=True # the input arrays are given in pixel units
-)
+x = x.to(device=device, dtype=torch.float)
+meas0 = forward_op_torch(x[:,0],x[:,1],x[:,2], pixelated=pixelated)
 
-pixelated = True
-
-imgr = Imager(pixelated=pixelated)
-imgr.get_measurements(sr)
-
-USE_OPTIMIZER = True
+save = False
+OPTIMIZER = 'Adam'
 USE_TV_LOSS = True
-GRAD_RES_LOSS = False
 DATA_FIDELITY = 'L2' # 'L1' or 'L2'
-maxiters = 20000
-snrdb = 35
+maxiters = 1000
+dbsnr = [15]
 mu_vel = 1e1 # GD step size for vel
 mu_width = 1e1 # GD step size for width
-lam_v = 1e-3 # TV norm regularization parameter for velocity
-lam_w = 1e-0 # TV norm regularization parameter for width
-regparamdec = 4 # TV regu. param. exp.tial decay (set to 0 for no decay)
-beta = 10**(-regparamdec/maxiters) # TV reg. param. multiplier
-lammin = 1e-3
-LR = 1e-2
-losses = []
-diffs_vel = []
-diffs_width = []
+lam_i = [10**-2] #, 10**-5, 10**-2] # TV norm regularization parameter for intensity
+lam_v = [10**-3] #, 10**-3.5, 10**-3] # TV norm regularization parameter for velocity
+lam_w = [10**-2] #, 10**-2.5, 10**-2] # TV norm regularization parameter for width
+regparamdec = 0 # TV regu. param. exp.tial decay (set to 0 for no decay)
+# beta = 10**(-regparamdec/maxiters) # TV reg. param. multiplier
+# lammin = 1e-3
+LR = 10**-2
 
-meas = add_noise(imgr.meas3dar, dbsnr=snrdb, model='Gaussian')
-meas = torch.from_numpy(meas).to(device=device, dtype=torch.float)
-x = x.to(device=device, dtype=torch.float)
+for i in range(len(lam_v)):
+    now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
+    name = (
+        f'{now}_dbsnr_{dbsnr[i]}_BS_{numim}_EP_{maxiters}_LR_{LR}_' +
+        f'{DATA_FIDELITY}_LOSS_TV_{OPTIMIZER}_lam_ivw_' +
+        f'{np.log10(lam_i[i])}_{np.log10(lam_v[i])}_{np.log10(lam_w[i])}/'
+    )
+    if save:
+        savedir = '../results/grad_descent/'+name
+        os.mkdir(savedir)
+    meas = add_noise(meas0, dbsnr=dbsnr[i], model='Gaussian')
 
-xh_int = x[0,0]
-xh_vel = torch.zeros(
-    (meas.shape[1],meas.shape[2]), device=device, dtype=torch.float, requires_grad=True)
-# xh_vel = x[0,1]
-xh_width = 0.25*torch.ones((meas.shape[1],meas.shape[2]), device=device, dtype=torch.float)
-xh_width = xh_width.requires_grad_()
-# xh_width = x[0,2]
-optimizer = optim.Adam([xh_vel, xh_width], lr=LR)
-# optimizer = optim.SGD([xh_vel, xh_width], lr=LR, momentum=0.5)
-xwidths = []
-xvels = []
+    xh, losses, xhs, diffs_vel, diffs_width = grad_descent_solver(
+        meas=meas,
+        truth=x,
+        OPTIMIZER='ADAM',
+        USE_TV_LOSS=USE_TV_LOSS,
+        DATA_FIDELITY=DATA_FIDELITY, # 'L1' or 'L2'
+        lam_i=lam_i[i],
+        lam_v=lam_v[i],
+        lam_w=lam_w[i],
+        LR=LR,
+        maxiters=maxiters,
+        return_arrays=True,
+        savepath='../results/grad_descent/'+name
+    )
 
-for i in tqdm(range(maxiters)):
-    if USE_OPTIMIZER:
-        optimizer.zero_grad()
-    # compute the residual
-    res = meas-forward_op_torch(xh_int,xh_vel,xh_width, pixelated=pixelated)
-    if DATA_FIDELITY == 'L1':
-        loss = torch.mean(abs(res))
-    elif DATA_FIDELITY == 'L2': 
-        loss = torch.mean(res**2)
-    if GRAD_RES_LOSS:
-        loss += grad_res_loss(res, loss=DATA_FIDELITY)
-    if USE_TV_LOSS:
-        loss += max(lammin,beta**i)*(lam_v*tv_loss(xh_vel) + lam_w*tv_loss(xh_width))
-    loss.backward()
+    xx = x.cpu().numpy()
+    ssims = compare_ssim(truth=xx, estimate=xh)
+    # assume maxval for (int,vel,width)=(1,2,2.5)
+    psnrs = compare_psnr(truth=xx, estimate=xh)
+    rmses = nrmse(truth=xx, estimate=xh)
 
-    if USE_OPTIMIZER:
-        optimizer.step()
-    else:
-        with torch.no_grad():
-            xh_vel -= mu_vel * xh_vel.grad
-            xh_vel.grad.zero_()
-            xh_width -= mu_width * xh_width.grad
-            xh_width.grad.zero_()
+    ssims_m = ssims.mean(axis=0)
+    rmses_m = rmses.mean(axis=0)
 
-    losses.append(loss.detach().cpu().numpy())
-    diff_vel = torch.sum((x[0,1]-xh_vel)**2)/torch.sum(x[0,1]**2)
-    diffs_vel.append(diff_vel.detach().cpu().numpy())
+    ssims_s = ssims.std(axis=0)
+    rmses_s = rmses.std(axis=0)
 
-    # loss = torch.mean((meas-forward_op_torch(xh_int,xh_vel.detach(),xh_width, pixelated=pixelated))**2)
-    # loss.backward()
+    print('SSIMs:  v: {:.2f}+/-{:.2f}  w: {:.2f}+/-{:.2f}'.format(
+        ssims_m[1], ssims_s[1], ssims_m[2], ssims_s[2]))
+    print('RMSEs:  v: {:.2f}+/-{:.2f}  w: {:.2f}+/-{:.2f}'.format(
+        rmses_m[1], rmses_s[1], rmses_m[2], rmses_s[2]))
 
-    # with torch.no_grad():
-        # xh_width -= mu_width * xh_width.grad
-        # xh_width.grad.zero_()
+    # %% save
+    if save:
+        np.save(savedir+'recons.npy', xh)
+        np.save(savedir+'truth.npy', xx)
 
-    #     losses.append(loss.detach().cpu().numpy())
-    diff_width = torch.sum((x[0,2]-xh_width)**2)/torch.sum(x[0,2]**2)
-    diffs_width.append(diff_width.detach().cpu().numpy())
-    if i%1000==0:
-        xwidths.append(xh_width.detach().cpu().numpy())
-        xvels.append(xh_vel.detach().cpu().numpy())
+        summary = [
+        f'Dataset Path = {dataset_path} \n',
+        f'Number of Images: {numim} \n',
+        'SSIMs: i: {:.2f}+/-{:.2f}  v: {:.2f}+/-{:.2f}  w: {:.2f}+/-{:.2f} \n'.format(
+        ssims_m[0], ssims_s[0], ssims_m[1], ssims_s[1], ssims_m[2], ssims_s[2]),
+        'RMSEs: i: {:.2f}+/-{:.2f}  v: {:.2f}+/-{:.2f}  w: {:.2f}+/-{:.2f} \n'.format(
+        rmses_m[0], rmses_s[0], rmses_m[1], rmses_s[1], rmses_m[2], rmses_s[2])
+        ]
 
-# %% plots
-plt.figure()
-plt.semilogy(losses)
-plt.title('Loss vs Iter')
-plt.xlabel('Iter')
-plt.ylabel('Loss')
-plt.show()
+        with open(savedir+'summary.txt', 'w') as file:
+            for line in summary:
+                file.write(line)
 
-plt.figure()
-plt.semilogy(diffs_vel)
-plt.title('||x_vel-xh_vel|| vs Iter')
-plt.xlabel('Iter')
-plt.ylabel('||x_vel-xh_vel||')
-plt.show()
+        plot_recons_gd(meas=meas.cpu().numpy(), truth=xx, recon=xh, savedir=savedir+'recons/')
 
-plt.figure()
-plt.semilogy(diffs_width)
-plt.title('||x_width-xh_width|| vs Iter')
-plt.xlabel('Iter')
-plt.ylabel('||x_width-xh_width||')
-plt.show()
+        stat_plotter(ssims, rmses, savedir)
+        joint_plotter(truth=xx.transpose(1,0,2,3).reshape(3,-1), 
+            recon=xh.transpose(1,0,2,3).reshape(3,-1), savedir=savedir)
 
-sr2 = Source(
-    inten=xh_int.detach().cpu().numpy(),
-    vel=xh_vel.detach().cpu().numpy(),
-    width=xh_width.detach().cpu().numpy(),
+    # %% loss
+    plt.figure()
+    plt.semilogy(losses)
+    plt.title('Loss vs Iter')
+    plt.xlabel('Iter')
+    plt.ylabel('Loss')
+    plt.tight_layout()
+    if save:
+        plt.savefig(savedir+'loss.png')
+    plt.show()
+
+    plt.figure()
+    plt.semilogy(diffs_vel)
+    plt.title('||x_vel-xh_vel|| vs Iter')
+    plt.xlabel('Iter')
+    plt.ylabel('||x_vel-xh_vel||')
+    plt.tight_layout()
+    if save:
+        plt.savefig(savedir+'x_vel_loss.png')
+    plt.show()
+
+    plt.figure()
+    plt.semilogy(diffs_width)
+    plt.title('||x_width-xh_width|| vs Iter')
+    plt.xlabel('Iter')
+    plt.ylabel('||x_width-xh_width||')
+    plt.tight_layout()
+    if save:
+        plt.savefig(savedir+'x_width_loss.png')
+    plt.show()
+
+# %% recon
+k=4
+sr = Source(
+    inten=x[k,0],
+    vel=x[k,1],
+    width=x[k,2],
     pix=True
 )
-ssims = compare_ssim(truth=sr.param3d, estimate=sr2.param3d)
-# assume maxval for (int,vel,width)=(1,2,2.5)
-psnrs = compare_psnr(truth=sr.param3d, estimate=sr2.param3d)
+sr2 = Source(
+    inten=xh[k,0],
+    vel=xh[k,1],
+    width=xh[k,2],
+    pix=True
+)
 
 sr.plot('Original')
 plt.tight_layout()
-sr2.plot('Estimated', ssims=ssims, psnrs=psnrs)
+sr2.plot('Estimated', ssims=ssims[k], rmses=rmses[k])
 plt.tight_layout()
