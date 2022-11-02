@@ -184,7 +184,7 @@ class Source():
         self.pix = pix
     def plot(self, title='', ssims=None, rmses=None, psnrs=None):
         if type(self.inten)==torch.Tensor:
-            inten, vel, width = inten.cpu().numpy(), vel.cpu().numpy(), width.cpu().numpy()
+            inten, vel, width = self.inten.cpu().numpy(), self.vel.cpu().numpy(), self.width.cpu().numpy()
         else:
             inten, vel, width = self.inten, self.vel, self.width
         str_int = 'Intensity'
@@ -301,7 +301,7 @@ class Imager():
         fig, ax = plt.subplots(1,len(self.spectral_orders), figsize=(15,5))
         plt.suptitle(title)
         for i,a in enumerate(self.spectral_orders):
-            im=ax[i].imshow(self.meas3d[str(a)], cmap='hot')
+            im=ax[i].imshow(self.meas3dar[i], cmap='hot')
             ax[i].set_title('Order {}'.format(a))
             fig.colorbar(im, ax=ax[i])
         plt.show()
