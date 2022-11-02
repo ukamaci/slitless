@@ -123,7 +123,8 @@ class OntheflyDataset(Dataset):
         meas = self.data[idx, :3]
         params = self.data[idx, 3:]
 
-        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None, model='Gaussian')
+        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None, 
+            model='Gaussian')
 
         if self.transform is not None:
             meas = self.transform(meas)

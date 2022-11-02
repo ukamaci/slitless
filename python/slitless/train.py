@@ -12,7 +12,8 @@ from slitless.networks.unet import UNet
 from slitless.measure import nrmse, nmse_torch, combine_losses, cycle_loss
 import numpy as np
 import matplotlib.pyplot as plt
-from slitless.evaluate import plot_recons, plot_val_stats
+from slitless.evaluate import plot_recons, plot_val_stats, eval_snrlist
+from slitless.plotting import barplot_group
 
 def train_net(net,
             device,
@@ -95,7 +96,7 @@ if __name__ == '__main__':
     NUM_FILT = 64
     numlayers = 4
     LR = 1e-3
-    EPOCHS = 400
+    EPOCHS = 5
     BATCH_SIZE = 4
     BILINEAR = True
     ksizes = [(3,1), (3,1), (3,1), (3,1)]
@@ -108,7 +109,7 @@ if __name__ == '__main__':
     LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
     OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
-    LOAD = False
+    LOAD = True
     otf = True # on the fly trainset generation 
     loaded_model_path = '../results/saved/2022_10_14__22_24_44_NF_64_BS_4_LR_0.001_EP_30_KSIZE_(3, 1)_MSE_LOSS_ADAM_all/best_model.pth'
     dataset_path = glob.glob('../../data/datasets/dset6*')[0]
@@ -240,6 +241,7 @@ if __name__ == '__main__':
     plt.close()
 
     net.load_state_dict(torch.load(f'../results/saved/{name}/best_model.pth'))
+    net.eval()
 
     testset = BasicDataset(data_dir=dataset_path, fold='test', dbsnr=dbsnr)
     testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=8)
@@ -247,18 +249,40 @@ if __name__ == '__main__':
     savedir = f'../results/saved/{name}/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
     plot_recons(net, testloader, numim=32, savedir=savedir+'figures/')
+    dbsnr_l = [15,25,35,None]
+    ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, fold='test', 
+    data_dir=dataset_path, net=net)
+    barplot_group(ssims_l.mean(axis=1).swapaxes(0,1), 
+        labels_gr=['int','vel','width'], labels_mem=[str(jj) for jj in dbsnr_l], 
+        ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'snr_barplot.png')
     est_bias = np.mean(outvec - yvec, axis=1) 
     est_std = np.std(outvec - yvec, axis=1)
+    np.save(savedir+'ssims_l.npy', ssims_l)
+    np.save(savedir+'rmses_l.npy', rmses_l)
 
     os.mkdir(f'../results/saved/{name}/val_results')
     savedir = f'../results/saved/{name}/val_results/'
     _ = plot_val_stats(net, valloader, savedir)
     plot_recons(net, valloader, numim=32, savedir=savedir+'figures/')
+    ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, fold='val', 
+    data_dir=dataset_path, net=net)
+    barplot_group(ssims_l.mean(axis=1).swapaxes(0,1), 
+        labels_gr=['int','vel','width'], labels_mem=[str(jj) for jj in dbsnr_l], 
+        ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'snr_barplot.png')
+    np.save(savedir+'ssims_l.npy', ssims_l)
+    np.save(savedir+'rmses_l.npy', rmses_l)
 
     os.mkdir(f'../results/saved/{name}/train_results')
     savedir = f'../results/saved/{name}/train_results/'
     _ = plot_val_stats(net, trainloader, savedir)
     plot_recons(net, trainloader, numim=32, savedir=savedir+'figures/')
+    ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, fold='val', 
+    data_dir=dataset_path, net=net)
+    barplot_group(ssims_l.mean(axis=1).swapaxes(0,1), 
+        labels_gr=['int','vel','width'], labels_mem=[str(jj) for jj in dbsnr_l], 
+        ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'snr_barplot.png')
+    np.save(savedir+'ssims_l.npy', ssims_l)
+    np.save(savedir+'rmses_l.npy', rmses_l)
 
     training_summary += [
     '\n############## Results ############## \n',
