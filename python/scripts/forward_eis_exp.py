@@ -7,11 +7,19 @@ from slitless.forward import Source, Imager
 from mas.forward_model import size_equalizer
 
 path_data = '/home/kamo/resources/slitless/data/datasets/dset0_2022_06_14/'
+path_data = '/home/kamo/resources/slitless/data/eis_data/datasets/dset_v1/meta/selected_scans_train/'
+date='20071211_002416'
 
+# sr = Source(
+#     inten=np.load(path_data+'int.npy'),
+#     vel=np.load(path_data+'vel.npy'),
+#     width=np.load(path_data+'wid.npy'),
+#     pix=False
+# )
 sr = Source(
-    inten=np.load(path_data+'int.npy'),
-    vel=np.load(path_data+'vel.npy'),
-    width=np.load(path_data+'wid.npy'),
+    inten=np.load(path_data+'int_{}.npy'.format(date))[149:169, 182:202],
+    vel=np.load(path_data+'vel_{}.npy'.format(date))[149:169, 182:202],
+    width=np.load(path_data+'width_{}.npy'.format(date))[149:169, 182:202],
     pix=False
 )
 
