@@ -267,23 +267,26 @@ def joint_plotter(truth, recon, savedir):
     est_std = np.std(recon - truth, axis=1)
 
     matplotlib.use('Agg')
-    fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], kind='hex', gridsize=100)
-    # fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], kind='hex', ylim=[-0.1,0.1], gridsize=100)
+    # fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], kind='hex', gridsize=100)
+    fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], kind='hex', ylim=[-0.03,0.03], gridsize=100)
     fg.fig.suptitle('Intensity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
     fg.set_axis_labels('Intensity', 'Intensity Error')
     fg.fig.tight_layout()
+    plt.grid(which='both', axis='both')
     plt.savefig(savedir+'intensity_stats.png', dpi=300)
-    fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', gridsize=100)
-    # fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', ylim=[-0.4,0.4], gridsize=100)
+    # fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', gridsize=100)
+    fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', ylim=[-0.2,0.2], xlim=[-0.4,0.4], gridsize=300)
     fg.fig.suptitle('Velocity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
     fg.set_axis_labels('Velocity', 'Velocity Error')
     fg.fig.tight_layout()
+    plt.grid(which='both', axis='both')
     plt.savefig(savedir+'velocity_stats.png', dpi=300)
-    fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], kind='hex', gridsize=100)
-    # fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], kind='hex', ylim=[-0.5,0.5], gridsize=100)
+    # fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], kind='hex', gridsize=100)
+    fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], kind='hex', ylim=[-0.25,0.25], xlim=[1,1.7], gridsize=100)
     fg.fig.suptitle('Linewidth Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
     fg.set_axis_labels('Linewidth', 'Linewidth Error')
     fg.fig.tight_layout()
+    plt.grid(which='both', axis='both')
     plt.savefig(savedir+'linewidth_stats.png', dpi=300)
 
     # Cross dependence of vel&width errors on intensity
@@ -380,21 +383,24 @@ def plot_val_stats(net, valloader, savedir):
         joint_plotter(yvec, outvec, savedir)
 
     if net.outch_type == 'int':
-        fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', ylim=[-0.1,0.1], gridsize=100)
+        # fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', ylim=[-0.1,0.1], gridsize=100)
+        fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', gridsize=100)
         fg.fig.suptitle('Intensity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
         fg.set_axis_labels('Intensity', 'Intensity Error')
         fg.fig.tight_layout()
         plt.savefig(savedir+'intensity_stats.png', dpi=300)
 
     if net.outch_type == 'vel':
-        fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', ylim=[-0.4,0.4], gridsize=100)
+        # fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', ylim=[-0.4,0.4], gridsize=100)
+        fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', gridsize=100)
         fg.fig.suptitle('Velocity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
         fg.set_axis_labels('Velocity', 'Velocity Error')
         fg.fig.tight_layout()
         plt.savefig(savedir+'velocity_stats.png', dpi=300)
 
     if net.outch_type == 'width':
-        fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', ylim=[-0.5,0.5], gridsize=100)
+        # fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', ylim=[-0.5,0.5], gridsize=100)
+        fg=sns.jointplot(x=yvec[0], y=outvec[0]-yvec[0], kind='hex', gridsize=100)
         fg.fig.suptitle('Linewidth Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
         fg.set_axis_labels('Linewidth', 'Linewidth Error')
         fg.fig.tight_layout()
@@ -405,10 +411,12 @@ def plot_val_stats(net, valloader, savedir):
 def eval_snrlist(dbsnr_list, fold, data_dir, net):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net = net.to(device=device)
-    if fold=='test':
-        dsetter = BasicDataset
-    else:
-        dsetter = OntheflyDataset
+
+    dsetter = BasicDataset
+    # if fold=='test':
+    #     dsetter = BasicDataset
+    # else:
+    #     dsetter = OntheflyDataset
 
     ssims_l = []
     rmses_l = []
@@ -443,19 +451,37 @@ def eval_snrlist(dbsnr_list, fold, data_dir, net):
                 outputs = np.array(outputs.cpu())
                 ssim0 = compare_ssim(truth=y1, estimate=outputs)
                 rmse0 = nrmse(truth=y1, estimate=outputs, normalization=None)
-                ssims.extend(ssim0.squeeze())
-                rmses.extend(rmse0.squeeze())
+                ssims.extend(ssim0)
+                rmses.extend(rmse0)
         
         ssims_l.append(ssims)
         rmses_l.append(rmses)
     return np.array(ssims_l), np.array(rmses_l)
 
+def meanest_errcalc(trainmeans, dataloader):
+    rmse = torch.zeros(3)
+    mae = torch.zeros(3)
+    ssim = torch.zeros(3)
+    estt = trainmeans[None,:,None,None]*torch.ones_like(next(iter(dataloader))[1])
+    for data in dataloader:
+        estt = trainmeans[None,:,None,None]*torch.ones_like(data[1])
+        rmse += torch.mean((data[1]-estt)**2, dim=(0,2,3))
+        mae += torch.mean(torch.abs(data[1]-estt), dim=(0,2,3))
+        ssim += compare_ssim(truth=data[1], estimate=estt).mean(axis=0)
+    ssim /= len(dataloader)
+    rmse /= len(dataloader)
+    rmse = torch.sqrt(rmse)
+    mae /= len(dataloader)
+    return ssim, rmse, mae
+
 if __name__ == '__main__':
-    foldname0 = '2022_10_15__18_56_55_NF_64_BS_4_LR_0.001_EP_250_KSIZE_(3, 1)_MSE_LOSS_ADAM_all'
+    # foldname0 = '2022_10_15__18_56_55_NF_64_BS_4_LR_0.001_EP_250_KSIZE_(3, 1)_MSE_LOSS_ADAM_all'
+    foldname0 = '2023_01_19__17_18_44_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_35_dssize_full'
     foldpath = glob.glob('../results/saved/'+foldname0)[0]+'/'
     net = net_loader(foldpath)
     dsetname='eistest64'
-    dataset_path = glob.glob(f'../../data/eis_data/{dsetname}/')[0]
+    # dataset_path = glob.glob(f'../../data/eis_data/{dsetname}/')[0]
+    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v1/')[0]
     fold = 'test'
     dataset = BasicDataset(data_dir = dataset_path, fold=fold, dbsnr=35)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=8)
@@ -465,20 +491,20 @@ if __name__ == '__main__':
         os.mkdir(savedir)
 
     ssims, rmses, yvec, outvec = plot_val_stats(net, dataloader, savedir)
-    plot_recons(net, dataloader, 32, savedir+'figures/')
+    # plot_recons(net, dataloader, 32, savedir+'figures/')
 
-    dbsnr_l = [15,25,35,None]
+    # dbsnr_l = [15,25,35,None]
 
-    ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, fold=fold, 
-    data_dir=dataset_path, net=net)
+    # ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, fold=fold, 
+    # data_dir=dataset_path, net=net)
 
-    barplot_group(ssims_l.mean(axis=1).swapaxes(0,1), 
-        labels_gr=['Intensity','Velocity','Linewidth'], labels_mem=[str(jj) for jj in dbsnr_l], 
-        ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'ssim_barplot.png')
+    # barplot_group(ssims_l.mean(axis=1).swapaxes(0,1), 
+    #     labels_gr=['Intensity','Velocity','Linewidth'], labels_mem=[str(jj) for jj in dbsnr_l], 
+    #     ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'ssim_barplot.png')
 
-    barplot_group(rmses_l.mean(axis=1).swapaxes(0,1), 
-        labels_gr=['Intensity','Velocity','Linewidth'], labels_mem=[str(jj) for jj in dbsnr_l], 
-        ylabel='RMSE', title='RMSE vs dBsnr', savedir=savedir+'rmse_barplot.png')
+    # barplot_group(rmses_l.mean(axis=1).swapaxes(0,1), 
+    #     labels_gr=['Intensity','Velocity','Linewidth'], labels_mem=[str(jj) for jj in dbsnr_l], 
+    #     ylabel='RMSE', title='RMSE vs dBsnr', savedir=savedir+'rmse_barplot.png')
 
-    np.save(savedir+'ssims_l.npy', ssims_l)
-    np.save(savedir+'rmses_l.npy', rmses_l)
+    # np.save(savedir+'ssims_l.npy', ssims_l)
+    # np.save(savedir+'rmses_l.npy', rmses_l)
