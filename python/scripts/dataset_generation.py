@@ -3,8 +3,9 @@ import matplotlib.pyplot as plt
 from skimage.color import rgb2gray
 import glob, itertools, os
 from mas.forward_model import size_equalizer
-from slitless.forward import Source, Imager
+from slitless.forward import Source, Imager, forward_op_torch
 from pqdm.processes import pqdm
+import torch
 
 def patch_extractor(file_path, path_save, ps=(64,64)):
     """
@@ -77,8 +78,8 @@ def eis_datasetter(arrays_path, out_path, ar_dim=64, pixelated=True):
                 imgr.get_measurements(sr)
 
                 out = {'int': imgr.srpix.inten, 'vel': imgr.srpix.vel, 'width': imgr.srpix.width}
-                for jj in imgr.spectral_orders:
-                    out[f'meas_{jj}'] = imgr.meas3d[str(jj)]
+                for zz,jj in enumerate(imgr.spectral_orders):
+                    out[f'meas_{jj}'] = imgr.meas3dar[zz]
                 np.save(out_path+f'data_{i+1}_{j*numx+k+1}.npy', out)
 
 def dataset_visualizer(path, ind=None):
@@ -116,6 +117,63 @@ def imagenet_datasetter():
     np.save(pathdset+'second_15k_gray_rot90.npy', dg[150000:165000])
     np.save(pathdset+'third_15k_gray_rot90.npy', dg[165000:180000])
 
+def imagenet_datasetter2():
+    pathdset = '/home/kamo/resources/slitless/data/datasets/imagenet64_train_p1/'
+    outpath = '/home/kamo/resources/slitless/data/datasets/dset8_imagenet_50000/'
+    trainset=np.load(pathdset+'first_150k_gray_rot90.npy')
+    valset=np.load(pathdset+'second_15k_gray_rot90.npy')
+    testset=np.load(pathdset+'third_15k_gray_rot90.npy')
+
+    dataset = trainset
+    path_save = outpath + 'train/'
+    intens, vels, widths = dataset.reshape(3,-1,64,64)
+
+    vel_max = 2 # pixels
+    width_max = 2.2 # pixels
+    width_min = 1 # pixels
+
+    v0, v1 = (np.random.uniform(0, vel_max, (2,len(vels))) * [[-1],[1]])[:,:,None,None]
+    w0, w1 = np.sort(np.random.uniform(width_min, width_max, (2,len(vels))), axis=0)[:,:,None,None]
+    
+    vels = vels * (v1 - v0) + v0
+    widths = widths * (w1 - w0) + w0
+
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda')
+    intens = torch.from_numpy(intens).to(device=device, dtype=torch.float)
+    vels = torch.from_numpy(vels).to(device=device, dtype=torch.float)
+    widths = torch.from_numpy(widths).to(device=device, dtype=torch.float)
+
+    meas = []
+    ind = 1000
+
+    for i in range(len(intens) // ind):
+        meas.extend(forward_op_torch(
+            true_intensity=intens[i*ind:(i+1)*ind],
+            true_doppler=vels[i*ind:(i+1)*ind],
+            true_linewidth=widths[i*ind:(i+1)*ind],
+            spectral_orders=[0,-1,1],
+            pixelated=True,
+            device=device
+        ).cpu().numpy())
+
+    data = np.concatenate((meas,intens.cpu()[:,None],vels.cpu()[:,None],widths.cpu()[:,None]), axis=1)
+
+    for i in range(len(data)):
+        if i%100==0:
+            print(i)
+        out = {
+            'meas_0': data[i,0],
+            'meas_-1': data[i,1],
+            'meas_1': data[i,2],
+            'int': data[i,3],
+            'vel': data[i,4],
+            'width': data[i,5]
+        }
+        np.save(path_save+f'data_{i}.npy', out)
+
+    return data
+
 # %% fwd
 def fwd_meas(i):
     """
@@ -127,17 +185,18 @@ def fwd_meas(i):
     Args:
         i (int): datapoint number
     """
-    width_min_min = 0.5
-    width_min_max = 1.0
-    width_max_min = 0.7
-    width_max_max = 2.0
+    width_min_min = 1.0
+    width_min_max = 1.3
+    width_max_min = 1.3
+    width_max_max = 2.2
 
     vel_min = 0.1
-    vel_max = 1.0
+    vel_max = 2.0
 
     spectral_orders = [0,-1,1]
     imgr = Imager(
-        spectral_orders=spectral_orders
+        spectral_orders=spectral_orders,
+        pixelated=True
     )
 
     files = np.array(glob.glob(file_path+'*.jpg'))
@@ -177,10 +236,10 @@ if __name__ == '__main__':
     valsize = 5000
     testsize = 5000
 
-    numsize = trainsize
+    numsize = testsize
     file_path = '/home/kamo/resources/slitless/data/datasets/dset2_2022_07_03_102flowers_64_64_patches/'
-    path_save0 = '/home/kamo/resources/slitless/data/datasets/dset5_flowers_50000/'
-    path_save = path_save0+'train/'
+    path_save0 = '/home/kamo/resources/slitless/data/datasets/dset7_flowers_50000/'
+    path_save = path_save0+'test/'
 
     args = np.arange(numsize)
     pqdm(args, fwd_meas, n_jobs=32)
