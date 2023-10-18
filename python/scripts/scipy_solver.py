@@ -7,19 +7,32 @@ from scipy.optimize import minimize
 from tqdm.auto import tqdm
 
 # %% impulse
-M = 64 # detector size
+M = 20 # detector size
 inten = np.outer(np.sin(np.arange(M)),np.sin(np.arange(M)))/5+0.8
 vel = np.outer(np.cos(np.arange(M)),np.cos(np.arange(M)))
 width = np.outer(np.sin(np.arange(M)),np.cos(np.arange(M)))/4+1.25
 spectral_orders=[0,-1,1]
 aa, bb = inten.shape
 
-meas = forward_op(inten, vel, width, pixelated=True)
+path_data = '/home/kamo/resources/slitless/data/eis_data/datasets/dset_v1/meta/selected_scans_train/'
+date='20071211_002416'
+sr = Source(
+    inten=np.load(path_data+'int_{}.npy'.format(date))[149:169, 182:202],
+    vel=np.load(path_data+'vel_{}.npy'.format(date))[149:169, 182:202],
+    width=np.load(path_data+'width_{}.npy'.format(date))[149:169, 182:202],
+    pix=False
+)
+imgr = Imager(pixelated=False)
+imgr.topix(sr)
+inten, vel, width = imgr.srpix.param3d
+# inten, vel, width = imgr.srpix.param3d.transpose(0,2,1)
+
+meas = forward_op(inten, vel, width, pixelated=False)
 
 def obj_ls(x, meas=None):
     aa, bb = meas.shape[1:]
     intensity, doppler, linewidth = np.reshape(x, (3,aa,bb))
-    diff = forward_op(intensity, doppler, linewidth) - meas
+    diff = forward_op(intensity, doppler, linewidth, pixelated=False) - meas
     return np.sum(diff**2)
 
 vel0 = np.zeros_like(vel)
@@ -30,10 +43,13 @@ rec = np.zeros((3,aa,bb))
 for i in tqdm(range(bb)):
     x0 = np.stack( ( meas[0,:,i], vel0[:,i], width0[:,i] ), axis=0 ).flatten()
     # recon = minimize(obj_ls, x0, args=(meas,), method='Nelder-Mead',
-    recon = minimize(obj_ls, x0, args=(meas[:,:,[i]],), method='BFGS',
-        options={'disp':True, 'maxiter':10000, 'adaptive':True})
+    recon = minimize(obj_ls, x0, args=(meas[:,:,[i]],), method='L-BFGS-B',
+        options={'disp':False, 'maxiter':10000, 'adaptive':True})
     rec[:,:,i] = recon.x.reshape(3,aa)
 
+
+# inten, vel, width = imgr.srpix.param3d
+# rec = rec.transpose(0,2,1)
 # %% plot
 sr = Source(
     inten=inten,
