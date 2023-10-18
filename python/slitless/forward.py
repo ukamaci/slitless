@@ -207,6 +207,7 @@ class Source():
         i2=ax[2].imshow(width, cmap='plasma')
         fig.colorbar(i2, ax=ax[2])
         ax[2].set_title(str_width)
+        plt.tight_layout()
         plt.show()
 
 
@@ -241,9 +242,9 @@ class Imager():
     def __init__(
         self,
         *,
-        pixel_size=13.5, # um
+        pixel_size=13.5, # um/pixel
         dispersion=1/1.65, # um/mA
-        dispersion_scale=None, # mA/pixels
+        dispersion_scale=None, # mA/pixel
         instrument_psf=None,
         spectral_orders=[0,-1,1],
         pixelated=False
@@ -269,6 +270,21 @@ class Imager():
             width=source.width/self.dispersion_scale*1000,
             wavelength=source.wavelength,
             pix=True
+        )
+
+    def frompix(self, source):
+        """
+        Takes as input a Source object which has the pixel units of 
+        velocity and line width, and creates another Source object as an attribute
+        of the Imager, which has these parameters in the physical units.
+        """
+        assert source.pix == True, "Source object is already in physical dimensions"
+        self.srphy = Source(
+            inten=source.inten,
+            vel=source.vel/(source.wavelength/300/self.dispersion_scale),
+            width=source.width*self.dispersion_scale/1000,
+            wavelength=source.wavelength,
+            pix=False
         )
 
     def get_measurements(
@@ -304,6 +320,7 @@ class Imager():
             im=ax[i].imshow(self.meas3dar[i], cmap='hot')
             ax[i].set_title('Order {}'.format(a))
             fig.colorbar(im, ax=ax[i])
+        plt.tight_layout()
         plt.show()
 
 def add_noise(signal, dbsnr=None, max_count=None, model='Gaussian', no_noise=False):
