@@ -289,7 +289,10 @@ class Imager():
 
     def get_measurements(
         self,
-        sources
+        sources,
+        dbsnr=None,
+        max_count=None,
+        model=None
     ):
         """
         Given a Source object, simulate and save measurements as an attribute 
@@ -313,11 +316,20 @@ class Imager():
             pixelated=self.pixelated
         )
 
-    def plot(self, title=''):
+        if model is not None:
+            self.meas3dar_nn = self.meas3dar.copy()
+            self.meas3dar = add_noise(
+                self.meas3dar, dbsnr=dbsnr, max_count=max_count, model=model
+            )
+
+    def plot(self, title='', noise=True):
         fig, ax = plt.subplots(1,len(self.spectral_orders), figsize=(15,5))
         plt.suptitle(title)
         for i,a in enumerate(self.spectral_orders):
-            im=ax[i].imshow(self.meas3dar[i], cmap='hot')
+            if (noise==False) and hasattr(self, 'meas3dar_nn'):
+                im=ax[i].imshow(self.meas3dar_nn[i], cmap='hot')
+            else:
+                im=ax[i].imshow(self.meas3dar[i], cmap='hot')
             ax[i].set_title('Order {}'.format(a))
             fig.colorbar(im, ax=ax[i])
         plt.tight_layout()
