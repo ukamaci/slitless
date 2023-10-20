@@ -289,7 +289,7 @@ class Imager():
 
     def get_measurements(
         self,
-        sources,
+        sources=None,
         dbsnr=None,
         max_count=None,
         model=None
@@ -301,6 +301,8 @@ class Imager():
         Args:
             sources (Source): a Source instance holding the source parameters
         """
+        if sources==None:
+            sources = self.srpix
         if sources.pix == False:
             self.topix(sources)
         else:
@@ -321,6 +323,8 @@ class Imager():
             self.meas3dar = add_noise(
                 self.meas3dar, dbsnr=dbsnr, max_count=max_count, model=model
             )
+        
+        return self.meas3dar
 
     def plot(self, title='', noise=True):
         fig, ax = plt.subplots(1,len(self.spectral_orders), figsize=(15,5))
