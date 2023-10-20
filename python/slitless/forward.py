@@ -149,6 +149,7 @@ class Source():
     A class for holding the source parameters.
 
     Args:
+        param3d (ndarray): 3d array of the stacked (inten, vel, width) arrays.
         inten (ndarray): 2d array of intensity values.
         vel (ndarray): 2d array of Doppler velocity values. Expects either the
             units of pixels with the pix=True, or [km/s] with pix=False argument.
@@ -164,23 +165,29 @@ class Source():
         width
         wavelength
         pix
-        param3d (ndarray): 3d array of the stacked (inten, vel, width) arrays.
+        param3d
     """
     def __init__(
         self,
         *,
+        param3d=None,
         inten=None,
         vel=None,
         width=None,
         wavelength=195.119,
         pix=False
     ):
-        self.inten = inten
-        self.vel = vel
-        self.width = width
         self.wavelength = wavelength
-        stack = torch.stack if type(self.inten)==torch.Tensor else np.stack
-        self.param3d = stack((inten, vel, width))
+        if param3d is not None:
+            self.inten = param3d[0]
+            self.vel = param3d[1]
+            self.width = param3d[2]
+        else:
+            self.inten = inten
+            self.vel = vel
+            self.width = width
+            stack = torch.stack if type(self.inten)==torch.Tensor else np.stack
+            self.param3d = stack((inten, vel, width))
         self.pix = pix
     def plot(self, title='', ssims=None, rmses=None, psnrs=None):
         if type(self.inten)==torch.Tensor:
@@ -292,7 +299,8 @@ class Imager():
         sources=None,
         dbsnr=None,
         max_count=None,
-        model=None
+        model=None,
+        no_noise=False
     ):
         """
         Given a Source object, simulate and save measurements as an attribute 
@@ -321,7 +329,8 @@ class Imager():
         if model is not None:
             self.meas3dar_nn = self.meas3dar.copy()
             self.meas3dar = add_noise(
-                self.meas3dar, dbsnr=dbsnr, max_count=max_count, model=model
+                self.meas3dar, dbsnr=dbsnr, max_count=max_count, model=model,
+                no_noise=no_noise
             )
         
         return self.meas3dar
