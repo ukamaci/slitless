@@ -278,6 +278,7 @@ class Imager():
             wavelength=source.wavelength,
             pix=True
         )
+        return self.srpix
 
     def frompix(self, source):
         """
@@ -293,6 +294,7 @@ class Imager():
             wavelength=source.wavelength,
             pix=False
         )
+        return self.srphy
 
     def get_measurements(
         self,

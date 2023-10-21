@@ -58,18 +58,42 @@ for i in tqdm(range(bb)):
     plt.pause(0.1)
     plt.show()
 
-rec = np.rot90(rec, k=3, axes=(1,2))
 # inten, vel, width = imgr.srpix.param3d
 # rec = rec.transpose(0,2,1)
 # %% plot
-sr_r = Source(
-    inten=rec[0],
-    vel=rec[1],
-    width=rec[2],
-    pix=True
-)
-
+sr_r = Source(param3d=np.rot90(rec, k=3, axes=(1,2)), pix=True)
 sr_o = Source(param3d=np.rot90(imgr.srpix.param3d,k=3,axes=(1,2)), pix=True)
 
 sr_o.plot('Orig')
 sr_r.plot('Recon')
+
+# %% eval
+srp_r = imgr.frompix(sr_r)
+srp_o = imgr.frompix(sr_o)
+
+int_phy, vel_phy, width_phy = srp_o.param3d
+int_phy_r, vel_phy_r, width_phy_r = srp_r.param3d
+
+int_er = int_phy_r - int_phy
+int_er_n = int_er/int_phy*100
+vel_er = vel_phy_r - vel_phy
+vel_er_n = vel_er/(vel_phy+1e0)*100
+width_er = width_phy_r - width_phy
+width_er_n = width_er/width_phy*100
+width_er = width_er/sr_r.wavelength*300000
+
+fig, ax = plt.subplots(1,3, figsize=(13.8,4.8))
+ax[0].hist(int_er_n.flatten(), edgecolor='Black', color='sandybrown')
+ax[0].set_title(r'Intensity RMS Error = {:.2f} $\mathrm{{erg \, cm^{{-2}} \, s^{{-1}} \, sr^{{-1}}}}$'.format(np.sqrt(np.mean(int_er**2))))
+ax[0].set_xlabel('Percent Deviation (%)')
+ax[0].set_ylabel('Number of Occurances')
+ax[1].hist(vel_er_n.flatten(), edgecolor='Black', color='sandybrown')
+ax[1].set_title('Doppler Velocity RMS Error = {:.2f} km/s'.format(np.sqrt(np.mean(vel_er**2))))
+ax[1].set_xlabel('Percent Deviation (%)')
+ax[1].set_ylabel('Number of Occurances')
+ax[2].hist(width_er_n.flatten(), edgecolor='Black', color='sandybrown')
+ax[2].set_title('Line Width RMS Error = {:.2f} km/s'.format(np.sqrt(np.mean(width_er**2))))
+ax[2].set_xlabel('Percent Deviation (%)')
+ax[2].set_ylabel('Number of Occurances')
+plt.tight_layout()
+plt.show()
