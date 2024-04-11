@@ -16,25 +16,26 @@ date='20071211_002416'
 #     width=np.load(path_data+'wid.npy'),
 #     pix=False
 # )
-sr = Source(
-    inten=np.load(path_data+'int_{}.npy'.format(date))[149:169, 182:202],
-    vel=np.load(path_data+'vel_{}.npy'.format(date))[149:169, 182:202],
-    width=np.load(path_data+'width_{}.npy'.format(date))[149:169, 182:202],
-    pix=False
-)
-
-# dim=100
 # sr = Source(
-#     # inten=size_equalizer(np.ones((dim//2+1,dim//2+1)), (dim,dim)),
-#     inten=np.ones((dim,dim)),
-#     vel=np.ones((dim,dim)),
-#     # vel=(np.arange(10000).reshape((100,100))%2-0.5)*300,
-#     width=np.ones((dim,dim))*0.30,
-#     pix=True
+#     inten=np.load(path_data+'int_{}.npy'.format(date))[149:169, 182:202],
+#     vel=np.load(path_data+'vel_{}.npy'.format(date))[149:169, 182:202],
+#     width=np.load(path_data+'width_{}.npy'.format(date))[149:169, 182:202],
+#     pix=False
 # )
 
-imgr1 = Imager(pixelated=False)
-imgr2 = Imager(pixelated=True)
+dim=100
+mask = np.array([[(i + j) % 2 for j in range(dim)] for i in range(dim)])
+sr = Source(
+    inten=size_equalizer(np.ones((dim//2+1,dim//2+1)), (dim,dim)),
+    # inten=np.ones((dim,dim)),
+    # vel=np.ones((dim,dim)),
+    vel=(np.arange(10000).reshape((dim,dim))%2-0.5)*300,
+    width=np.ones((dim,dim))*0.30,
+    pix=True
+)
+
+imgr1 = Imager(pixelated=False, mask=mask)
+imgr2 = Imager(pixelated=True, mask=mask)
 
 t0 = time.time()
 imgr1.get_measurements(sr)

@@ -32,6 +32,7 @@ def forward_op(
     true_linewidth=None,
     param3d=None,
     pixelated=False,
+    mask=None,
     spectral_orders=[0,-1,1]):
     """
     Given 2d arrays of intensity, doppler, and linewidth, calculate the noise
@@ -58,13 +59,17 @@ def forward_op(
     gauss_func = gauss_pix if pixelated else gauss
     if param3d is not None:
         true_intensity, true_doppler, true_linewidth = param3d
+    if mask is not None:
+        assert true_intensity.shape == mask.shape, "Mask shape does not match detector shape"
+    else:
+        mask = np.ones_like(true_intensity)
     aa, bb = true_intensity.shape
     out = np.zeros((len(spectral_orders),)+(aa,bb))
     diffrange = np.arange(aa)[np.newaxis,:,np.newaxis]-np.arange(aa)[np.newaxis,np.newaxis,:]
     # assume columns of detector are independent
     for z,a in enumerate(spectral_orders):
         if a == 0:
-            out[z] = true_intensity.copy()
+            out[z] = mask * true_intensity.copy()
             continue
         out[z] = np.einsum(
             'kij,kj->ki',
@@ -73,7 +78,7 @@ def forward_op(
                 a*true_doppler.transpose(1,0)[:,np.newaxis,:], 
                 abs(a)*true_linewidth.transpose(1,0)[:,np.newaxis,:]
             ), 
-            true_intensity.transpose(1,0)
+            mask.transpose(1,0) * true_intensity.transpose(1,0)
         ).transpose(1,0)
     return out
 
@@ -83,6 +88,7 @@ def forward_op_torch(
     true_linewidth=None,
     pixelated=False,
     spectral_orders=[0,-1,1],
+    mask=None,
     device=None):
     """
     Given 2d (or 3d where the first dimension is batch dim) arrays of intensity,
@@ -113,6 +119,17 @@ def forward_op_torch(
         true_intensity = true_intensity[None]
         true_doppler = true_doppler[None]
         true_linewidth = true_linewidth[None]
+        if mask is not None:
+            mask = mask[None]
+    else:
+        if mask is not None:
+            mask = np.repeat(mask[np.newaxis,:,:], len(true_intensity), axis=0)
+        else:
+            mask = torch.ones_like(true_intensity)
+
+    if type(mask)!=type(true_intensity):
+        mask = torch.from_numpy(mask).to(device=device, dtype=torch.float)
+
     k, aa, bb = true_intensity.shape
     out = torch.zeros((k,) + (len(spectral_orders),)+(aa,bb))
     out = out.to(device=device, dtype=torch.float)
@@ -122,7 +139,7 @@ def forward_op_torch(
     for z,a in enumerate(spectral_orders):
         a = torch.Tensor([a]).to(device=device, dtype=torch.float)
         if a == 0:
-            out[:,z] = true_intensity.clone()
+            out[:,z] = mask*true_intensity.clone()
             continue
         out[:,z] = torch.einsum(
             'lkij,lkj->lki',
@@ -131,7 +148,7 @@ def forward_op_torch(
                 a*true_doppler.permute(0,2,1)[:,:,None,:], 
                 torch.abs(a)*true_linewidth.permute(0,2,1)[:,:,None,:]
             ), 
-            true_intensity.permute(0,2,1)
+            mask.permute(0,2,1) * true_intensity.permute(0,2,1)
         ).permute(0,2,1)
     if len(true_intensity.shape) == 2:
         return out[0]
@@ -254,7 +271,8 @@ class Imager():
         dispersion_scale=None, # mA/pixel
         instrument_psf=None,
         spectral_orders=[0,-1,1],
-        pixelated=False
+        pixelated=False,
+        mask=None,
     ):
         self.pixel_size = pixel_size
         self.dispersion_scale = pixel_size / dispersion
@@ -263,6 +281,7 @@ class Imager():
             self.dispersion = pixel_size / dispersion_scale
         self.spectral_orders = spectral_orders
         self.pixelated = pixelated
+        self.mask = mask
 
     def topix(self, source):
         """
@@ -280,28 +299,52 @@ class Imager():
         )
         return self.srpix
 
-    def frompix(self, source):
+    def frompix(self, source, width_unit='A', array=False):
         """
         Takes as input a Source object which has the pixel units of 
         velocity and line width, and creates another Source object as an attribute
         of the Imager, which has these parameters in the physical units.
         """
-        assert source.pix == True, "Source object is already in physical dimensions"
-        self.srphy = Source(
-            inten=source.inten,
-            vel=source.vel/(source.wavelength/300/self.dispersion_scale),
-            width=source.width*self.dispersion_scale/1000,
-            wavelength=source.wavelength,
-            pix=False
+        if array==False:
+            assert source.pix == True, "Source object is already in physical dimensions"
+            self.srphy = Source(
+                inten=source.inten,
+                vel=source.vel/(source.wavelength/300/self.dispersion_scale),
+                width=source.width*self.dispersion_scale/1000,
+                wavelength=source.wavelength,
+                pix=False
+            )
+            if width_unit == 'km/s':
+                self.srphy.width *= 3e5 / source.wavelength
+            return self.srphy
+        else:
+            out = source.copy()
+            out[...,1,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
+            if width_unit=='km/s':
+                out[...,2,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
+            elif width_unit=='A':
+                out[...,2,:,:]*=self.dispersion_scale/1000
+            return out
+
+    def forward_op(self, inten, vel, width):
+
+        fwd_op = forward_op_torch if type(inten)==torch.Tensor else forward_op
+
+        return fwd_op(
+            true_intensity=inten,
+            true_doppler=vel,
+            true_linewidth=width,
+            spectral_orders=self.spectral_orders,
+            pixelated=self.pixelated,
+            mask=self.mask
         )
-        return self.srphy
 
     def get_measurements(
         self,
         sources=None,
         dbsnr=None,
         max_count=None,
-        model=None,
+        noise_model=None,
         no_noise=False
     ):
         """
@@ -325,15 +368,19 @@ class Imager():
             true_doppler=self.srpix.vel,
             true_linewidth=self.srpix.width,
             spectral_orders=self.spectral_orders,
-            pixelated=self.pixelated
+            pixelated=self.pixelated,
+            mask=self.mask
         )
 
-        if model is not None:
+        if noise_model is not None:
             self.meas3dar_nn = self.meas3dar.copy()
             self.meas3dar = add_noise(
-                self.meas3dar, dbsnr=dbsnr, max_count=max_count, model=model,
+                self.meas3dar, dbsnr=dbsnr, max_count=max_count, noise_model=noise_model,
                 no_noise=no_noise
             )
+            self.dbsnr = dbsnr
+            self.max_count = max_count
+            self.noise_model = noise_model
         
         return self.meas3dar
 
@@ -350,7 +397,7 @@ class Imager():
         plt.tight_layout()
         plt.show()
 
-def add_noise(signal, dbsnr=None, max_count=None, model='Gaussian', no_noise=False):
+def add_noise(signal, dbsnr=None, max_count=None, noise_model='Gaussian', no_noise=False):
     """
     Add noise to the given signal at the specified level.
 
@@ -361,7 +408,7 @@ def add_noise(signal, dbsnr=None, max_count=None, model='Gaussian', no_noise=Fal
         the noise. For Poisson model, it is taken as the average snr where snr
         of a pixel is given by the square root of its value.
         max_count (int): Max number of photon counts in the given signal
-        model (string): String that specifies the noise model. The 2 options are
+        noise_model (string): String that specifies the noise model. The 2 options are
         `Gaussian` and `Poisson`
         no_noise (bool): (default=False) If True, return the clean signal
 
@@ -370,15 +417,15 @@ def add_noise(signal, dbsnr=None, max_count=None, model='Gaussian', no_noise=Fal
     """
     if no_noise is True:
         return signal
-    assert model.lower() in ('gaussian', 'poisson'), "invalid noise model"
+    assert noise_model.lower() in ('gaussian', 'poisson'), "invalid noise model"
 
     sig = signal.cpu().numpy() if type(signal)==torch.Tensor else signal
 
-    if model.lower() == 'gaussian':
+    if noise_model.lower() == 'gaussian':
         var_sig = np.var(sig, axis=(-1,-2), keepdims=True)
         std_noise = (var_sig / 10**(dbsnr / 10))**0.5
         out = np.random.normal(sig, std_noise)
-    elif model.lower() == 'poisson':
+    elif noise_model.lower() == 'poisson':
         if max_count is not None:
             scalar = max_count / np.max(sig, axis=(-1,-2), keepdims=True)
             sig_scaled = sig * scalar
