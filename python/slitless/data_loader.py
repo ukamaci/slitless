@@ -47,7 +47,7 @@ class BasicDataset(Dataset):
     def __getitem__(self, idx):
         meas, params = self.data[idx]
 
-        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None, model='Gaussian')
+        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None, noise_model='Gaussian')
 
         if self.transform is not None:
             meas = self.transform(meas)

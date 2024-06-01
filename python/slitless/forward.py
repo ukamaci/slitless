@@ -82,6 +82,115 @@ def forward_op(
         ).transpose(1,0)
     return out
 
+def datacube_generator(param3d, pixelated=True):
+    M,N = param3d.shape[1:]
+    gauss_func = gauss_pix if pixelated else gauss
+    cube = gauss_func(
+        np.arange(M)[:,np.newaxis,np.newaxis],
+        param3d[1][np.newaxis,:,:] + M//2,
+        param3d[2][np.newaxis,:,:]
+    )
+    cube *= param3d[0][np.newaxis,:,:]
+    return cube
+
+def forward_op_tomo_2d_old(datacube):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    M,M = datacube.shape
+    dc_p = np.pad(datacube, ((0,0), (0,M-1)))
+    dc_m = np.pad(datacube, ((0,0), (M-1,0)))
+    for i in range(M):
+        dc_p[i] = np.roll(dc_p[i], i)
+        dc_m[i] = np.roll(dc_m[i], -i)
+    # return dc_p, dc_m
+    
+    i_lam = M // 2
+
+    dc_0 = np.sum(datacube, axis=0)
+    dc_m = np.sum(dc_m, axis=0)[-i_lam-M:-i_lam]
+    dc_p = np.sum(dc_p, axis=0)[i_lam:i_lam+M]
+    return np.stack((dc_0, dc_m, dc_p), axis=0)
+
+def forward_op_tomo_2d(datacube):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    M,M = datacube.shape
+    dc_p = np.zeros((M, 2*M-1))
+    dc_p[:,:M] = datacube
+    dc_m = dc_p.copy()
+    for i,r in enumerate(np.arange(M)-M//2):
+        dc_p[i] = np.roll(dc_p[i], r)
+        dc_m[i] = np.roll(dc_m[i], -r)
+    # return dc_p, dc_m
+    
+    dc_0 = np.sum(datacube, axis=0)
+    dc_m = np.sum(dc_m, axis=0)[:M]
+    dc_p = np.sum(dc_p, axis=0)[:M]
+    return np.stack((dc_0, dc_m, dc_p), axis=0)
+
+def forward_op_tomo_3d(dc, inf=False):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    M,M,N = dc.shape
+    dc_p = np.zeros((M,2*M-1,N))
+    dc_p[:,:M] = dc
+    dc_m = dc_p.copy()
+    for i,r in enumerate(np.arange(M)-M//2):
+        dc_p[i] = np.roll(dc_p[i], r, axis=0)
+        dc_m[i] = np.roll(dc_m[i], -r, axis=0)
+    # return dc_p, dc_m
+    
+    dc_0 = np.sum(dc, axis=0)
+    dc_m = np.sum(dc_m, axis=0)[:M]
+    dc_p = np.sum(dc_p, axis=0)[:M]
+    if inf is True:
+        dc_i = np.sum(dc, axis=1)
+        return np.stack((dc_0, dc_m, dc_p, dc_i), axis=0)
+    else:
+        return np.stack((dc_0, dc_m, dc_p), axis=0)
+
+def forward_op_tomo_2d_transpose(meas):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    _,M = meas.shape
+    datacube_m = np.ones((M,2*M-1))
+    datacube_p = np.ones((M,2*M-1))
+
+    datacube_0 = np.outer(np.ones(M), meas[0])
+    datacube_m[:,:M] = np.outer(np.ones(M), meas[1])
+    datacube_p[:,:M] = np.outer(np.ones(M), meas[2])
+
+    for i,r in enumerate(np.arange(M)-M//2):
+        datacube_p[i] = np.roll(datacube_p[i], -r)
+        datacube_m[i] = np.roll(datacube_m[i], r)
+    
+    return np.stack((datacube_0, datacube_m[:,:M], datacube_p[:,:M]), axis=0)
+
+def forward_op_tomo_3d_transpose(meas, inf=False):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    _,M,N = meas.shape
+    datacube_m = np.ones((M,2*M-1,N)) # (lambda,y,x)
+    datacube_p = np.ones((M,2*M-1,N))
+
+    datacube_0 = np.repeat(meas[0][np.newaxis], M, axis=0)
+    datacube_m[:,:M] = np.repeat(meas[1][np.newaxis], M, axis=0)
+    datacube_p[:,:M] = np.repeat(meas[2][np.newaxis], M, axis=0)
+
+    for i,r in enumerate(np.arange(M)-M//2):
+        datacube_p[i] = np.roll(datacube_p[i], -r, axis=0)
+        datacube_m[i] = np.roll(datacube_m[i], r, axis=0)
+    
+    if inf is True:
+        datacube_i = np.repeat(meas[3][:,np.newaxis], M, axis=1)
+        return np.stack((datacube_0, datacube_m[:,:M], datacube_p[:,:M], datacube_i), axis=0)
+    else:
+        return np.stack((datacube_0, datacube_m[:,:M], datacube_p[:,:M]), axis=0)
+
+def forward_op_tomo_3d_loopy(datacube):
+    M,M,N = datacube.shape # (lambda,y,x)
+    y_p = np.zeros((M,N))
+    y_m = np.zeros((M,N))
+    y_0 = np.zeros((M,N))
+    for i in range(N):
+        y_0[:,i], y_m[:,i], y_p[:,i] = forward_op_tomo_2d(datacube[:,:,i])
+    return np.stack((y_0, y_m, y_p), axis=0)
+
 def forward_op_torch(
     true_intensity=None,
     true_doppler=None,
@@ -196,6 +305,7 @@ class Source():
     ):
         self.wavelength = wavelength
         if param3d is not None:
+            self.param3d = param3d
             self.inten = param3d[0]
             self.vel = param3d[1]
             self.width = param3d[2]
@@ -273,6 +383,9 @@ class Imager():
         spectral_orders=[0,-1,1],
         pixelated=False,
         mask=None,
+        dbsnr=None,
+        max_count=None,
+        noise_model=None,
     ):
         self.pixel_size = pixel_size
         self.dispersion_scale = pixel_size / dispersion
@@ -282,6 +395,9 @@ class Imager():
         self.spectral_orders = spectral_orders
         self.pixelated = pixelated
         self.mask = mask
+        self.dbsnr = dbsnr
+        self.max_count = max_count
+        self.noise_model = noise_model
 
     def topix(self, source):
         """
@@ -360,6 +476,13 @@ class Imager():
             self.topix(sources)
         else:
             self.srpix = sources
+        
+        if dbsnr is None:
+            dbsnr = self.dbsnr
+        if max_count is None:
+            max_count = self.max_count
+        if noise_model is None:
+            noise_model = self.noise_model
 
         fwd_op = forward_op_torch if type(sources.inten)==torch.Tensor else forward_op
 
@@ -372,15 +495,11 @@ class Imager():
             mask=self.mask
         )
 
-        if noise_model is not None:
-            self.meas3dar_nn = self.meas3dar.copy()
-            self.meas3dar = add_noise(
-                self.meas3dar, dbsnr=dbsnr, max_count=max_count, noise_model=noise_model,
-                no_noise=no_noise
-            )
-            self.dbsnr = dbsnr
-            self.max_count = max_count
-            self.noise_model = noise_model
+        self.meas3dar_nn = self.meas3dar.copy()
+        self.meas3dar = add_noise(
+            self.meas3dar, dbsnr=dbsnr, max_count=max_count, noise_model=noise_model,
+            no_noise=no_noise
+        )
         
         return self.meas3dar
 

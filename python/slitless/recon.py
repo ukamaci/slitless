@@ -1,10 +1,12 @@
-import torch, copy
+import torch, copy, glob, time
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import optim
-from slitless.forward import Source, Imager, forward_op_torch, forward_op
+from slitless.forward import Source, Imager, forward_op_torch, forward_op, forward_op_tomo_3d, forward_op_tomo_3d_transpose
 from slitless.measure import cycle_loss, compare_ssim, tv_loss
+from slitless.evaluate import net_loader, predict
 from scipy.optimize import minimize
+from scipy.ndimage import convolve
 from tqdm.auto import tqdm
 
 
@@ -28,37 +30,138 @@ class Reconstructor():
         self.num_realizations = num_realizations
         recons = []
         losses = []
+        times = []
         for i in range(num_realizations):
             _ = self.imager.get_measurements(
                 dbsnr=self.imager.dbsnr, max_count=self.imager.max_count, 
                 noise_model=self.imager.noise_model
             )
+            t0 = time.time()
             recon, loss = self.solver(
                 imager = self.imager,
                 **self.solver_params
             )
+            t1 = time.time()
+            times.append(t1-t0)
             recons.append(recon)
             losses.append(loss)
         self.recons = Recon(recon=np.array(recons), losses=np.array(losses), 
-                            imager=self.imager, source=self.source)
+            times=np.array(times), imager=self.imager, source=self.source)
         self.recons.eval()
+        self.times = np.array(times)
+
         return self.recons
-            
         
+
+class Reconstructor_Multi():
+    def __init__(
+        self,
+        *,
+        imager=None,
+        param4dar=None,
+        solver=None,
+        pix=None,
+        **solver_params
+    ):
+        self.imager = imager 
+        self.solver = solver
+        self.param4dar = param4dar
+        self.solver_params = solver_params
+        self.pix = pix
+
+    def solve(
+        self,
+        num_realizations=1
+    ):
+        self.num_realizations = num_realizations
+
+        self.recons = []
+        self.sources = []
+        self.times = []
+
+        self.ssim = []
+        self.rmse_pix = []
+        self.rmse_phy = []
+        self.mae_pix = []
+        self.mae_phy = []
+        self.bias_pix = []
+        self.bias_phy = []
+        self.ssim_m = []
+        self.rmse_pix_m = []
+        self.rmse_phy_m = []
+        self.mae_pix_m = []
+        self.mae_phy_m = []
+
+        for i in range(self.param4dar.shape[0]):
+            Sr = Source(
+                param3d=self.param4dar[i],
+                pix=self.pix
+            )
+
+            self.sources.append(Sr)
+
+            if self.pix==False:
+                self.imager.topix(Sr)
+            else:
+                self.imager.srpix = Sr
+            
+            Rec = Reconstructor(
+                imager=self.imager,
+                solver=self.solver,
+                **self.solver_params
+            )
+
+            recons = Rec.solve(num_realizations=self.num_realizations)
+            self.recons.append(recons)
+            self.times.append(Rec.times)
+
+            self.ssim.append(recons.ssim)
+            self.rmse_pix.append(recons.rmse_pix)
+            self.rmse_phy.append(recons.rmse_phy)
+            self.mae_pix.append(recons.mae_pix)
+            self.mae_phy.append(recons.mae_phy)
+            self.bias_pix.append(recons.bias_pix)
+            self.bias_phy.append(recons.bias_phy)
+            self.ssim_m.append(recons.ssim_m)
+            self.rmse_pix_m.append(recons.rmse_pix_m)
+            self.rmse_phy_m.append(recons.rmse_phy_m)
+            self.mae_pix_m.append(recons.mae_pix_m)
+            self.mae_phy_m.append(recons.mae_phy_m)
+
+        self.times = np.array(self.times)
+        self.ssim = np.array(self.ssim)
+        self.rmse_pix = np.array(self.rmse_pix)
+        self.rmse_phy = np.array(self.rmse_phy)
+        self.mae_pix = np.array(self.mae_pix)
+        self.mae_phy = np.array(self.mae_phy)
+        self.bias_pix = np.array(self.bias_pix)
+        self.bias_phy = np.array(self.bias_phy)
+        self.ssim_m = np.array(self.ssim_m)
+        self.rmse_pix_m = np.array(self.rmse_pix_m)
+        self.rmse_phy_m = np.array(self.rmse_phy_m)
+        self.mae_pix_m = np.array(self.mae_pix_m)
+        self.mae_phy_m = np.array(self.mae_phy_m)
+        
+        return self.recons
+
+
 class Recon():
     def __init__(
             self,
             *,
             recon=None,
             losses=None,
+            times=None,
             imager=None,
             source=None
     ):
         self.recon = recon
         self.losses = losses
+        self.times = times
         self.imager = imager
         self.source = source
         self.losses_avg = np.mean(self.losses, axis=0)
+        self.times_avg = np.mean(self.times)
 
     def plot(
             self,
@@ -122,12 +225,70 @@ class Recon():
         self.rmse_phy = np.sqrt(np.mean((recon_phy-truth_phy)**2, axis=(-1,-2)))
         self.mae_pix = np.mean(abs(recon_pix-truth_pix), axis=(-1,-2))
         self.mae_phy = np.mean(abs(recon_phy-truth_phy), axis=(-1,-2))
+        self.bias_pix = np.mean(recon_pix-truth_pix, axis=(-1,-2))
+        self.bias_phy = np.mean(recon_phy-truth_phy, axis=(-1,-2))
         self.ssim_m = compare_ssim(truth=truth_pix, estimate=truth_pix_mean)
         self.rmse_pix_m = np.sqrt(np.mean((truth_pix_mean-truth_pix)**2, axis=(-1,-2)))
         self.rmse_phy_m = np.sqrt(np.mean((truth_phy_mean-truth_phy)**2, axis=(-1,-2)))
         self.mae_pix_m = np.mean(abs(truth_pix_mean-truth_pix), axis=(-1,-2))
         self.mae_phy_m = np.mean(abs(truth_phy_mean-truth_phy), axis=(-1,-2))
 
+def gauss_pmf_fitter(
+    line
+):
+    inten = np.sum(line, axis=0)
+    line0 = line / inten
+    mean = np.sum(np.arange(len(line))[:,None,None]*line0, axis=0)
+    std = np.sqrt(np.sum((np.arange(len(line))**2)[:,None,None]*line0, axis=0) - mean**2)
+    mean -= len(line)//2
+    return np.stack((inten, mean, std), axis=0)
+
+def smart(
+        meas,
+        psi=0.2,
+        maxouter=20,
+        maxinner=40,
+):
+    NK, M, N = meas.shape
+    inf=True if NK==4 else False
+
+    #initialize
+    cubes = []
+    cors = []
+    cube = np.ones((M,M,N))
+    cubes.append(cube)
+    k0 = np.array([0.25, 0.5, 0.25])
+    k1 = np.outer(k0,k0)
+    kernel = k0[None,None] * k1[:,:,None]
+
+    for i in range(maxouter):
+        print('Outer Iter: {}/{}'.format(i+1,maxouter))
+        # contrast enhancement
+        cube = (cube + cube**(1+psi))*np.sum(cube)/np.sum(cube + cube**(1+psi))
+        # kernel smoothing
+        cube = convolve(cube, kernel)
+        for j in range(maxinner):
+            # print('Inner Iter: {}/{}'.format(j+1,maxinner))
+            meas2 = forward_op_tomo_3d(cube, inf=inf)
+            # chi-square
+            chi = np.mean(((meas-meas2)**2)/(meas+1e-7), axis=(1,2))
+            unconverged = chi>0.0000000001
+            # if all are converged, go to the next iter
+            if np.sum(unconverged)==0:
+                continue
+            # cor = (meas/(meas2+1e-5))**(2/(3+1*(inf==True)))
+            cor = (meas/(meas2+1e-5))**(2/(3))
+            # cor = (meas2/meas)**2/3 # Warning!: reversed order in ESIS2022
+            Cor = forward_op_tomo_3d_transpose(cor, inf=inf)
+            Corr = np.prod(Cor[unconverged],axis=0)**(1/np.sum(unconverged))
+            cube *= Corr
+        print(f'chi:{chi}')
+        # cors.append(Cor)
+        # cubes.append(cube)
+    
+    recon = gauss_pmf_fitter(cube)
+    
+    return recon #, cubes
 
 def grad_descent_solver(
     imager=None,
@@ -173,7 +334,7 @@ def grad_descent_solver(
         diffs_vel = []
         diffs_width = []
 
-    for i in tqdm(range(maxiter), leave=False):
+    for i in tqdm(range(maxiter)):
         optimizer.zero_grad()
         if DATA_FIDELITY == 'L1':
             loss = torch.mean(abs(meas-imager.forward_op(xh_int,xh_vel,xh_width)))
@@ -209,6 +370,17 @@ def grad_descent_solver(
 
     return recon, losses
 
+def nn_solver(
+        imager=None,
+        model_path='2023_01_19__17_18_44_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_35_dssize_full'
+):
+    foldpath = glob.glob('../results/saved/'+model_path)[0]+'/'
+    net = net_loader(foldpath)
+    net.eval()
+    recon = predict(net, imager.meas3dar.copy())
+
+    losses = []
+    return recon, losses
 
 def scipy_solver(
     imager=None,
@@ -234,7 +406,7 @@ def scipy_solver(
 
         if DATA_FIDELITY == 'L2':
             return np.sum(diff**2) + regu
-        elif DATA_FIDELITY == 'L2':
+        elif DATA_FIDELITY == 'L1':
             return np.sum(abs(diff)) + regu
 
     meas = imager.meas3dar.copy()
