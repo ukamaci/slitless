@@ -51,7 +51,7 @@ def eis_datasetter(arrays_path, out_path, ar_dim=64, pixelated=True):
     width_files = glob.glob(arrays_path+'width*')
     width_files.sort()
 
-    spectral_orders = [0,-1,1]
+    spectral_orders = [0,-1,1,-2,2]
     imgr = Imager(spectral_orders=spectral_orders, pixelated=pixelated)
 
     for i in range(len(int_files)):
@@ -232,14 +232,18 @@ if __name__ == '__main__':
     #
     # patch_extractor(file_path, path_save)
 
-    trainsize = 50000
-    valsize = 5000
-    testsize = 5000
+    # trainsize = 50000
+    # valsize = 5000
+    # testsize = 5000
 
-    numsize = testsize
-    file_path = '/home/kamo/resources/slitless/data/datasets/dset2_2022_07_03_102flowers_64_64_patches/'
-    path_save0 = '/home/kamo/resources/slitless/data/datasets/dset7_flowers_50000/'
-    path_save = path_save0+'test/'
+    # numsize = testsize
+    # file_path = '/home/kamo/resources/slitless/data/datasets/dset2_2022_07_03_102flowers_64_64_patches/'
+    # path_save0 = '/home/kamo/resources/slitless/data/datasets/dset7_flowers_50000/'
+    # path_save = path_save0+'test/'
 
-    args = np.arange(numsize)
-    pqdm(args, fwd_meas, n_jobs=32)
+    # args = np.arange(numsize)
+    # pqdm(args, fwd_meas, n_jobs=32)
+    arrays_path = '/home/kamo/resources/slitless/data/eis_data/datasets/dset_v1/meta/selected_scans_train/'
+    out_path = '/home/kamo/resources/slitless/data/eis_data/datasets/dset_v1/train2/'
+
+    eis_datasetter(arrays_path, out_path, ar_dim=64, pixelated=True)

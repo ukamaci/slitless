@@ -125,9 +125,10 @@ def train_net(net,
 
 if __name__ == '__main__':
     # ---------
+    numdetectors = 3
     NUM_FILT = 64
     numlayers = 4
-    LR = 1e-3
+    LR = 2e-4
     # LR= 0.01
     EPOCHS = 200
     BATCH_SIZE = 4
@@ -145,15 +146,17 @@ if __name__ == '__main__':
     LOAD = False
     otf = None # on the fly trainset generation 
     loaded_model_path = '../results/saved/2022_10_14__22_24_44_NF_64_BS_4_LR_0.001_EP_30_KSIZE_(3, 1)_MSE_LOSS_ADAM_all/best_model.pth'
-    dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
-    testset_path = glob.glob('../../data/eis_data/datasets/dset_v1/')[0]
-    dbsnr = 35
+    # dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
+    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v2/')[0]
+    testset_path = glob.glob('../../data/eis_data/datasets/dset_v2/')[0]
+    dbsnr = 100
+    noise_model = 'poisson'
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-    name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}'
+    name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
     if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
-    name += '_dssize_imagenet'
+    name += '_dssize_full'
     os.mkdir('../results/saved/'+name)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -167,9 +170,9 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    trainset = BasicDataset(data_dir=dataset_path, fold='train', dbsnr=dbsnr)
-    valset = BasicDataset(data_dir=dataset_path, fold='val', dbsnr=dbsnr)
-    testset = BasicDataset(data_dir=testset_path, fold='test', dbsnr=dbsnr)
+    trainset = BasicDataset(data_dir=dataset_path, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    valset = BasicDataset(data_dir=dataset_path, fold='val', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    testset = BasicDataset(data_dir=testset_path, fold='test', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
     trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
     valloader = DataLoader(valset, batch_size=32, shuffle=True, num_workers=8)
     testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=8)
@@ -192,7 +195,7 @@ if __name__ == '__main__':
         trainmeans, testloader)
 
     net = UNet(
-        in_channels=3,
+        in_channels=numdetectors,
         out_channels=out_channels,
         numlayers=numlayers,
         outch_type=OUTCH,
@@ -239,6 +242,8 @@ if __name__ == '__main__':
     f'convolution) = {BILINEAR} \n',
     f'Kernel Size = {ksizes} \n',
     f'Number of Layers = {numlayers} \n',
+    f'Number of Detectors = {numdetectors} \n',
+    f'Noise Model / dbsnr = {noise_model} / {dbsnr} \n',
     f'Output Channels = {OUTCH} \n',
     '\n############## Optimization Parameters ############## \n',
     f'Optimizer = {OPTIMIZER} \n',
@@ -320,8 +325,8 @@ if __name__ == '__main__':
     savedir = f'../results/saved/{name}/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
     plot_recons(net, testloader, numim=32, savedir=savedir+'figures/')
-    dbsnr_l = [15,25,35,None]
-    ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, fold='test', 
+    dbsnr_l = [15,25,50,None]
+    ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, noise_model=noise_model, fold='test', 
     data_dir=testset_path, net=net)
     labels_gr = ['int','vel','width'] if net.outch_type=='all' else [net.outch_type]
     barplot_group(ssims_l.mean(axis=1).swapaxes(0,1), 
@@ -332,20 +337,21 @@ if __name__ == '__main__':
     np.save(savedir+'ssims_l.npy', ssims_l)
     np.save(savedir+'rmses_l.npy', rmses_l)
 
-    testset = BasicDataset(data_dir=dataset_path, fold='test', dbsnr=dbsnr)
-    testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=8)
+    ######### Flower Dataset Evals ##########
+    # testset = BasicDataset(data_dir=dataset_path, fold='test', dbsnr=dbsnr)
+    # testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=8)
 
-    os.mkdir(f'../results/saved/{name}/test_results_flower')
-    savedir = f'../results/saved/{name}/test_results_flower/'
-    _ = plot_val_stats(net, testloader, savedir)
-    plot_recons(net, testloader, numim=32, savedir=savedir+'figures/')
-    ssims_lt, rmses_lt = eval_snrlist(dbsnr_list=dbsnr_l, fold='test', 
-    data_dir=dataset_path, net=net)
-    barplot_group(ssims_lt.mean(axis=1).swapaxes(0,1), 
-        labels_gr=['int','vel','width'], labels_mem=[str(jj) for jj in dbsnr_l], 
-        ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'snr_barplot.png')
-    np.save(savedir+'ssims_l.npy', ssims_lt)
-    np.save(savedir+'rmses_l.npy', rmses_lt)
+    # os.mkdir(f'../results/saved/{name}/test_results_flower')
+    # savedir = f'../results/saved/{name}/test_results_flower/'
+    # _ = plot_val_stats(net, testloader, savedir)
+    # plot_recons(net, testloader, numim=32, savedir=savedir+'figures/')
+    # ssims_lt, rmses_lt = eval_snrlist(dbsnr_list=dbsnr_l, fold='test', 
+    # data_dir=dataset_path, net=net)
+    # barplot_group(ssims_lt.mean(axis=1).swapaxes(0,1), 
+    #     labels_gr=['int','vel','width'], labels_mem=[str(jj) for jj in dbsnr_l], 
+    #     ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'snr_barplot.png')
+    # np.save(savedir+'ssims_l.npy', ssims_lt)
+    # np.save(savedir+'rmses_l.npy', rmses_lt)
 
     # os.mkdir(f'../results/saved/{name}/train_results')
     # savedir = f'../results/saved/{name}/train_results/'
@@ -358,6 +364,7 @@ if __name__ == '__main__':
     #     ylabel='SSIM', title='SSIM vs dBsnr', savedir=savedir+'snr_barplot.png')
     # np.save(savedir+'ssims_l.npy', ssims_l)
     # np.save(savedir+'rmses_l.npy', rmses_l)
+    ##########################################
 
     training_summary += [
     '\n############## Train-Oracle Constant Estimates ############## \n',

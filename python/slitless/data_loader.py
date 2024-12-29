@@ -11,7 +11,7 @@ from multiprocessing import Pool
 
 class BasicDataset(Dataset):
     def __init__(self, data_dir, fold='train', transform=None,
-        target_transform=None, dbsnr=None):
+        target_transform=None, dbsnr=None, noise_model=None, numdetectors=3):
         self.data_dir = data_dir
         self.data = []
         self.train = False
@@ -19,6 +19,8 @@ class BasicDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.dbsnr = dbsnr
+        self.noise_model = noise_model
+        self.numdetectors = numdetectors
 
         if fold == 'train':
             self.train = True
@@ -35,7 +37,7 @@ class BasicDataset(Dataset):
         for file in self.files:
             data = np.load(file, allow_pickle=True).item()
             params = np.stack([data['int'], data['vel'], data['width']])
-            meas = np.stack([data['meas_0'], data['meas_-1'], data['meas_1']])
+            meas = np.stack([data['meas_0'], data['meas_-1'], data['meas_1'], data['meas_-2'], data['meas_2']])[:numdetectors]
             self.data.append((meas, params))
 
         self.transform = transform
@@ -47,7 +49,8 @@ class BasicDataset(Dataset):
     def __getitem__(self, idx):
         meas, params = self.data[idx]
 
-        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None, noise_model='Gaussian')
+        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None,
+            noise_model=self.noise_model)
 
         if self.transform is not None:
             meas = self.transform(meas)

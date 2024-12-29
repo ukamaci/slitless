@@ -29,3 +29,28 @@ def barplot_group(data, labels_gr, labels_mem, ylabel, title, savedir=None):
     else:
         plt.show()
     
+metrics_dict = {
+    'methods': ['1D MAP', 'MART', 'U-Net'],
+    'parameter': 'Intensity',
+    'swept_param': 'K (Num. of Orders)',
+    'metric': 'RMSE',
+    'array': [
+        [0.012, 0.011, 0.011, 0.010],
+        [0.013, 0.012, 0.011, 0.011],
+        [0.010, 0.010, 0.009, 0.009],
+    ],
+    'swept_arr': [2,3,4,5]
+}
+
+def comparison_sweep(*, methods=None, parameter=None, swept_param=None, metric=None,
+array=None, swept_arr=None):
+    markers = ['s','d','o']
+    fig = plt.figure(figsize=(3.2,2.4))
+    for i, method in enumerate(methods):
+        plt.plot(swept_arr, array[i], label=method, marker=markers[i], linestyle='dashed')
+    plt.xlabel(swept_param)
+    plt.ylabel('{} {}'.format(parameter,metric))
+    plt.legend()
+    plt.grid(which='both', axis='both')
+    plt.tight_layout()
+    return fig

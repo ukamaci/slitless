@@ -38,21 +38,11 @@ def forward_op(
     Given 2d arrays of intensity, doppler, and linewidth, calculate the noise
     free measurements at the specified spectral orders.
 
-    Notes: This implementation uses einsum instead of for loops and is faster.
-
-    Args:
-        true_intensity (ndarray): 2d array of true intensities.
-        true_doppler (ndarray): 2d array of true doppler shifts in the units of
+    Notes: This implementation uses[0,-1,1] of true doppler shifts in the units of
             pixels.
-        true_linewidth (ndarray): 2d array of true line widths in the units of
-            pixels.
-        param3d (ndarray): 3d array of the 2d arrays of intensity, velocity, 
-            and line width. If provided, the 2d parameter inputs are ignored. 
-        pixelated (bool): if True, take the integral of Gaussian along a pixel
-            instead of impulse sampling at the midpoint.
-        spectral_orders (list): list of the spectral orders.
+        true_linewidth (ndarray): 2d array of tru50ral orders.
 
-    Returns:
+    returns:
         measurements (ndarray): 3d array of measurements. The first dimension
             contains the specified spectral orders with the same ordering.
     """
@@ -82,16 +72,46 @@ def forward_op(
         ).transpose(1,0)
     return out
 
-def datacube_generator(param3d, pixelated=True):
-    M,N = param3d.shape[1:]
+def datacube_generator(param3d, pixelated=True, lamdim=21):
+    # M,N = param3d.shape[1:]
     gauss_func = gauss_pix if pixelated else gauss
     cube = gauss_func(
-        np.arange(M)[:,np.newaxis,np.newaxis],
-        param3d[1][np.newaxis,:,:] + M//2,
+        np.arange(lamdim)[:,np.newaxis,np.newaxis],
+        param3d[1][np.newaxis,:,:] + lamdim//2,
         param3d[2][np.newaxis,:,:]
     )
     cube *= param3d[0][np.newaxis,:,:]
     return cube
+
+def tomomtx_gen(shape, orders=[0,-1,1]):
+    M,N = shape
+    cols = np.outer(np.ones(M),np.arange(N))
+    rows = np.outer(np.arange(M), np.ones(N))
+    mtx = []
+    for order in orders:
+        mtx_i=[]
+        if order==0:
+            for i in range(N):
+                mtx_i.append((cols==i).flatten())
+            mtx.append(np.array(mtx_i).astype(int))
+        elif order=='inf':
+            for i in range(M):
+                mtx_i.append((rows==i).flatten())
+            mtx.append(np.array(mtx_i).astype(int))
+        elif abs(order)==1:
+            map_o = cols + order * (rows-M//2)
+            for i in range(N):
+                mtx_i.append((map_o==i).flatten())
+            mtx.append(np.array(mtx_i).astype(int))
+        elif abs(order)==2:
+            map_o = cols + order * (rows-M//2)
+            for i in range(N):
+                temp = abs(map_o-i)
+                temp[temp<2] = 1-0.5*temp[temp<2]
+                temp *= temp<2
+                mtx_i.append(0.5*temp.flatten())
+            mtx.append(np.array(mtx_i))
+    return np.concatenate(mtx, axis=0)
 
 def forward_op_tomo_2d_old(datacube):
     # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
@@ -126,7 +146,7 @@ def forward_op_tomo_2d(datacube):
     dc_p = np.sum(dc_p, axis=0)[:M]
     return np.stack((dc_0, dc_m, dc_p), axis=0)
 
-def forward_op_tomo_3d(dc, inf=False):
+def forward_op_tomo_3d_k3(dc, inf=False):
     # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
     M,M,N = dc.shape
     dc_p = np.zeros((M,2*M-1,N))
@@ -146,6 +166,101 @@ def forward_op_tomo_3d(dc, inf=False):
     else:
         return np.stack((dc_0, dc_m, dc_p), axis=0)
 
+interp2d = np.vectorize(np.interp, signature='(m),(n),(n)->(m)')
+
+def forward_op_tomo_3d_v0(dc, orders=[0,-1,1], inf=False):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    M,M,N = dc.shape
+    projs = []
+
+    dc_p = np.zeros((M,2*M-1,N))
+    dc_p[:,:M] = dc
+    dc_m = dc_p.copy()
+
+    M2 = 2*M-1
+    dc_p2 = np.zeros((M2,M2+M-1,N))
+    dc_m2 = dc_p2.copy()
+
+    if 2 in np.abs(orders):
+        dc2 = 0.5 * interp2d(np.arange(M2), np.arange(M)*2, dc.T).T
+
+        dc_p2[:,:M] = dc2
+        dc_m2 = dc_p2.copy()
+
+        for i,r in enumerate(np.arange(M2)-M2//2):
+            if 2 in orders:
+                dc_p2[i] = np.roll(dc_p2[i], r, axis=0)
+            if -2 in orders:
+                dc_m2[i] = np.roll(dc_m2[i], -r, axis=0)
+
+    for i,r in enumerate(np.arange(M)-M//2):
+        dc_p[i] = np.roll(dc_p[i], r, axis=0)
+        dc_m[i] = np.roll(dc_m[i], -r, axis=0)
+    # return dc_p, dc_m
+    
+    dc_0 = np.sum(dc, axis=0)
+    dc_m = np.sum(dc_m, axis=0)[:M]
+    dc_p = np.sum(dc_p, axis=0)[:M]
+    dc_m2 = np.sum(dc_m2, axis=0)[:M]
+    dc_p2 = np.sum(dc_p2, axis=0)[:M]
+
+    dcs = [dc_0, dc_m, dc_p, dc_m2, dc_p2]
+    ordlist = [0,-1,1,-2,2]
+    inds = np.where(ordlist==np.array(orders)[:,None])[1]
+
+    dcs2 = [dcs[ind] for ind in inds]
+    if inf is True:
+        dc_i = np.sum(dc, axis=1)
+        return np.stack(dcs2 + [dc_i], axis=0)
+    else:
+        return np.stack(dcs2, axis=0)
+
+def forward_op_tomo_3d(dc, orders=[0,-1,1], inf=False):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    M,M,N = dc.shape
+    projs = []
+
+    dc_p = np.zeros((M,2*M-1,N))
+    dc_p[:,:M] = dc
+    dc_m = dc_p.copy()
+
+    M2 = M
+    dc_p2 = np.zeros((M2,M2+M-1,N))
+    dc_m2 = dc_p2.copy()
+
+    if 2 in np.abs(orders):
+
+        dc_p2[:,:M] = dc
+        dc_m2 = dc_p2.copy()
+
+        for i,r in enumerate(np.arange(M2)-M2//2):
+            if 2 in orders:
+                dc_p2[i] = np.roll(dc_p2[i], 2*r, axis=0)
+            if -2 in orders:
+                dc_m2[i] = np.roll(dc_m2[i], -2*r, axis=0)
+
+    for i,r in enumerate(np.arange(M)-M//2):
+        dc_p[i] = np.roll(dc_p[i], r, axis=0)
+        dc_m[i] = np.roll(dc_m[i], -r, axis=0)
+    # return dc_p, dc_m
+    
+    dc_0 = np.sum(dc, axis=0)
+    dc_m = np.sum(dc_m, axis=0)[:M]
+    dc_p = np.sum(dc_p, axis=0)[:M]
+    dc_m2 = np.sum(dc_m2, axis=0)[:M]
+    dc_p2 = np.sum(dc_p2, axis=0)[:M]
+
+    dcs = [dc_0, dc_m, dc_p, dc_m2, dc_p2]
+    ordlist = [0,-1,1,-2,2]
+    inds = np.where(ordlist==np.array(orders)[:,None])[1]
+
+    dcs2 = [dcs[ind] for ind in inds]
+    if inf is True:
+        dc_i = np.sum(dc, axis=1)
+        return np.stack(dcs2 + [dc_i], axis=0)
+    else:
+        return np.stack(dcs2, axis=0)
+
 def forward_op_tomo_2d_transpose(meas):
     # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
     _,M = meas.shape
@@ -162,11 +277,15 @@ def forward_op_tomo_2d_transpose(meas):
     
     return np.stack((datacube_0, datacube_m[:,:M], datacube_p[:,:M]), axis=0)
 
-def forward_op_tomo_3d_transpose(meas, inf=False):
+def forward_op_tomo_3d_transpose_k3(meas, inf=False, smart=True):
     # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
     _,M,N = meas.shape
-    datacube_m = np.ones((M,2*M-1,N)) # (lambda,y,x)
-    datacube_p = np.ones((M,2*M-1,N))
+    if smart is True:
+        datacube_m = np.ones((M,2*M-1,N)) # (lambda,y,x)
+        datacube_p = np.ones((M,2*M-1,N))
+    else:
+        datacube_m = np.zeros((M,2*M-1,N)) # (lambda,y,x)
+        datacube_p = np.zeros((M,2*M-1,N))
 
     datacube_0 = np.repeat(meas[0][np.newaxis], M, axis=0)
     datacube_m[:,:M] = np.repeat(meas[1][np.newaxis], M, axis=0)
@@ -181,6 +300,46 @@ def forward_op_tomo_3d_transpose(meas, inf=False):
         return np.stack((datacube_0, datacube_m[:,:M], datacube_p[:,:M], datacube_i), axis=0)
     else:
         return np.stack((datacube_0, datacube_m[:,:M], datacube_p[:,:M]), axis=0)
+
+def forward_op_tomo_3d_transpose(meas, orders=[0,-1,1], inf=False):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    ordlist = [0,-1,1,-2,2]
+    inds = np.where(ordlist==np.array(orders)[:,None])[1]
+
+    _,M,N = meas.shape
+    dc_m = np.ones((M,2*M-1,N)) # (lambda,y,x)
+    dc_p = np.ones((M,2*M-1,N))
+    dc_m2 = np.ones((M,3*M-2,N))
+    dc_p2 = np.ones((M,3*M-2,N))
+
+    dc_0 = np.repeat(meas[0][np.newaxis], M, axis=0)
+    if -1 in orders:
+        dc_m[:,:M] = np.repeat(meas[1][np.newaxis], M, axis=0)
+    if 1 in orders:
+        dc_p[:,:M] = np.repeat(meas[2][np.newaxis], M, axis=0)
+    if -2 in orders:
+        dc_m2[:,:M] = np.repeat(meas[3][np.newaxis], M, axis=0)
+    if 2 in orders:
+        dc_p2[:,:M] = np.repeat(meas[4][np.newaxis], M, axis=0)
+
+    for i,r in enumerate(np.arange(M)-M//2):
+        if -1 in orders:
+            dc_m[i] = np.roll(dc_m[i], r, axis=0)
+        if 1 in orders:
+            dc_p[i] = np.roll(dc_p[i], -r, axis=0)
+        if -2 in orders:
+            dc_m2[i] = np.roll(dc_m2[i], 2*r, axis=0)
+        if 2 in orders:
+            dc_p2[i] = np.roll(dc_p2[i], -2*r, axis=0)
+
+    dcs = [dc_0, dc_m, dc_p, dc_m2, dc_p2]
+    dcs2 = [dcs[ind][:,:M] for ind in inds]
+    
+    if inf is True:
+        dc_i = np.repeat(meas[-1][:,np.newaxis], M, axis=1)
+        return np.stack(dcs2 + [dc_i], axis=0)
+    else:
+        return np.stack(dcs2, axis=0)
 
 def forward_op_tomo_3d_loopy(datacube):
     M,M,N = datacube.shape # (lambda,y,x)
@@ -223,7 +382,8 @@ def forward_op_torch(
     gauss_func = gauss_pix_torch if pixelated else gauss_torch
     # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if device == None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = true_intensity.device
     if len(true_intensity.shape) == 2:
         true_intensity = true_intensity[None]
         true_doppler = true_doppler[None]
@@ -306,9 +466,9 @@ class Source():
         self.wavelength = wavelength
         if param3d is not None:
             self.param3d = param3d
-            self.inten = param3d[0]
-            self.vel = param3d[1]
-            self.width = param3d[2]
+            self.inten = param3d[...,0,:,:]
+            self.vel = param3d[...,1,:,:]
+            self.width = param3d[...,2,:,:]
         else:
             self.inten = inten
             self.vel = vel
@@ -316,11 +476,13 @@ class Source():
             stack = torch.stack if type(self.inten)==torch.Tensor else np.stack
             self.param3d = stack((inten, vel, width))
         self.pix = pix
-    def plot(self, title='', ssims=None, rmses=None, psnrs=None):
+    def plot(self, title='', idx=0, ssims=None, rmses=None, psnrs=None):
         if type(self.inten)==torch.Tensor:
             inten, vel, width = self.inten.cpu().numpy(), self.vel.cpu().numpy(), self.width.cpu().numpy()
         else:
             inten, vel, width = self.inten, self.vel, self.width
+        if len(inten.shape) == 3:
+            inten, vel, width = inten[idx], vel[idx], width[idx]
         str_int = 'Intensity'
         str_vel = 'Velocity [pix]' if self.pix else 'Velocity [km/s]'
         str_width = 'Linewidth [pix]' if self.pix else 'Linewidth [A]'
@@ -343,7 +505,7 @@ class Source():
         ax[2].set_title(str_width)
         plt.tight_layout()
         plt.show()
-
+        return fig, ax
 
 class Imager():
     """
@@ -423,18 +585,20 @@ class Imager():
         """
         if array==False:
             assert source.pix == True, "Source object is already in physical dimensions"
+            vel = source.vel/(source.wavelength/300/self.dispersion_scale)
+            width = source.width*self.dispersion_scale/1000
+            if width_unit == 'km/s':
+                width *= 3e5 / source.wavelength
             self.srphy = Source(
                 inten=source.inten,
-                vel=source.vel/(source.wavelength/300/self.dispersion_scale),
-                width=source.width*self.dispersion_scale/1000,
+                vel=vel,
+                width=width,
                 wavelength=source.wavelength,
                 pix=False
             )
-            if width_unit == 'km/s':
-                self.srphy.width *= 3e5 / source.wavelength
             return self.srphy
         else:
-            out = source.copy()
+            out = source.clone() if type(source)==torch.Tensor else source.copy()
             out[...,1,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
             if width_unit=='km/s':
                 out[...,2,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
@@ -458,10 +622,11 @@ class Imager():
     def get_measurements(
         self,
         sources=None,
+        tomo=False,
         dbsnr=None,
         max_count=None,
         noise_model=None,
-        no_noise=False
+        no_noise=None
     ):
         """
         Given a Source object, simulate and save measurements as an attribute 
@@ -484,18 +649,25 @@ class Imager():
         if noise_model is None:
             noise_model = self.noise_model
 
-        fwd_op = forward_op_torch if type(sources.inten)==torch.Tensor else forward_op
+        if tomo is True:
+            fwd_op = forward_op_tomo_3d
+            self.datacube = datacube_generator(self.srpix.param3d)
+            self.meas3dar = fwd_op(
+                self.datacube
+            )
+        else:
+            fwd_op = forward_op_torch if type(sources.inten)==torch.Tensor else forward_op
 
-        self.meas3dar = fwd_op(
-            true_intensity=self.srpix.inten,
-            true_doppler=self.srpix.vel,
-            true_linewidth=self.srpix.width,
-            spectral_orders=self.spectral_orders,
-            pixelated=self.pixelated,
-            mask=self.mask
-        )
+            self.meas3dar = fwd_op(
+                true_intensity=self.srpix.inten,
+                true_doppler=self.srpix.vel,
+                true_linewidth=self.srpix.width,
+                spectral_orders=self.spectral_orders,
+                pixelated=self.pixelated,
+                mask=self.mask
+            )
 
-        self.meas3dar_nn = self.meas3dar.copy()
+        self.meas3dar_nn = self.meas3dar.clone() if type(sources.inten)==torch.Tensor else self.meas3dar.copy()
         self.meas3dar = add_noise(
             self.meas3dar, dbsnr=dbsnr, max_count=max_count, noise_model=noise_model,
             no_noise=no_noise
@@ -537,6 +709,8 @@ def add_noise(signal, dbsnr=None, max_count=None, noise_model='Gaussian', no_noi
     if no_noise is True:
         return signal
     assert noise_model.lower() in ('gaussian', 'poisson'), "invalid noise model"
+    if noise_model.lower() == 'poisson' and max_count is None:
+        max_count = dbsnr**2/0.9
 
     sig = signal.cpu().numpy() if type(signal)==torch.Tensor else signal
 

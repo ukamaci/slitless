@@ -2,13 +2,15 @@ import torch, copy, glob, time
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import optim
-from slitless.forward import Source, Imager, forward_op_torch, forward_op, forward_op_tomo_3d, forward_op_tomo_3d_transpose
+from slitless.forward import (Source, Imager, forward_op_torch, forward_op, 
+    forward_op_tomo_3d, forward_op_tomo_3d_transpose, add_noise, gauss_pix,
+    datacube_generator, tomomtx_gen)
 from slitless.measure import cycle_loss, compare_ssim, tv_loss
 from slitless.evaluate import net_loader, predict
-from scipy.optimize import minimize
+from scipy.optimize import minimize, curve_fit
 from scipy.ndimage import convolve
 from tqdm.auto import tqdm
-
+from denoising_diffusion_pytorch import Unet, GaussianDiffusion
 
 class Reconstructor():
     def __init__(
@@ -22,20 +24,26 @@ class Reconstructor():
         self.source = imager.srpix 
         self.solver = solver
         self.solver_params = solver_params
+        self.tomo=True if self.solver=='smart' else False
 
     def solve(
         self,
         num_realizations=1
     ):
         self.num_realizations = num_realizations
+        _ = self.imager.get_measurements(
+            dbsnr=self.imager.dbsnr, max_count=self.imager.max_count, 
+            noise_model=self.imager.noise_model, tomo=self.tomo
+        )
         recons = []
         losses = []
         times = []
         for i in range(num_realizations):
-            _ = self.imager.get_measurements(
-                dbsnr=self.imager.dbsnr, max_count=self.imager.max_count, 
-                noise_model=self.imager.noise_model
+            self.imager.meas3dar = add_noise(
+                self.imager.meas3dar_nn, dbsnr=self.imager.dbsnr, 
+                max_count=self.imager.max_count, noise_model=self.imager.noise_model,
             )
+
             t0 = time.time()
             recon, loss = self.solver(
                 imager = self.imager,
@@ -202,12 +210,16 @@ class Recon():
             plt.tight_layout()
             plt.show()
         else:
-            sr.plot(title=title)
+            fig, ax = sr.plot(title=title)
+        
+        return fig, ax
+
 
     def plot_loss(self):
         plt.figure()
         plt.title('Loss vs Iter')
         plt.plot(self.losses_avg, linewidth=2)
+        plt.grid(which='both', axis='both')
         plt.show()
 
     def eval(self):
@@ -243,23 +255,159 @@ def gauss_pmf_fitter(
     mean -= len(line)//2
     return np.stack((inten, mean, std), axis=0)
 
-def smart(
-        meas,
-        psi=0.2,
-        maxouter=20,
-        maxinner=40,
+def gauss_pmf_fitter2(
+    line
 ):
-    NK, M, N = meas.shape
-    inf=True if NK==4 else False
+    inten = np.sum(line, axis=0)
+    mean = np.zeros_like(inten)
+    std = np.ones_like(inten)
+    ind0 = np.where(inten<=0)
 
+    mean = np.sum(np.arange(len(line))[:,None,None]*line, axis=0) / inten
+    std = np.sqrt(np.sum((np.arange(len(line))**2)[:,None,None]*line, axis=0) / inten - mean**2)
+    mean -= len(line)//2
+    inten[ind0] = 0
+    std[ind0] = 1.2
+    mean[ind0] = 0
+    inten = np.clip(inten, 0, 1)
+    std = np.clip(std, 0.5, 2.3)
+    mean = np.clip(mean, -2, 2)
+    inten[np.isnan(inten)] = 0
+    mean[np.isnan(mean)] = 0
+    std[np.isnan(std)] = 2.3
+
+    return np.stack((inten, mean, std), axis=0)
+
+def gauss_(x,inten, vel, width):
+    return inten * gauss_pix(x,vel+len(x)//2,width)
+
+def gauss_curvefit(dc):
+    M, N, R = dc.shape
+    param3d = np.zeros((3,N,R))
+    for i in range(N):
+        for j in range(R):
+            par, var = curve_fit(gauss_, np.arange(M), dc[:,i,j], 
+                p0=[1,0,1], bounds=((0,-2,1),(1,2,2.3)), maxfev=5000)
+            param3d[:,i,j] = par
+    return param3d
+
+def tomoinv0(
+    meas=None,
+    imager=None,
+    stepsize=1e-1,
+    lam=1e-1,
+    numiter=20
+):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    gauss_curvefit = gauss_pmf_fitter2
+    # gauss_curvefit = lambda a : a
+    # datacube_generator = lambda a : a * (a>=0).astype(a.dtype)
+    if imager is not None:
+        meas = torch.tensor(imager.meas3dar.copy()).to(device)
+    else:
+        meas = torch.tensor(meas).to(device)
+    NK, N, R = meas.shape
+    # H = torch.tensor(tomomtx_gen((21,N), orders=imager.spectral_orders), dtype=torch.float64).to(device)
+    H = torch.tensor(tomomtx_gen((21,N), orders=[0,-1,1]), dtype=torch.float64).to(device)
+    y = meas.view(-1,R)
+    gaminv = torch.linalg.inv(H.T@H+lam*torch.eye(21*N).to(device))
+    Hty = H.T @ y
+    r_pinv = gaminv @ Hty
+    r_hat = torch.tensor(datacube_generator(gauss_curvefit(r_pinv.view(21,N,R).cpu().numpy()))).to(device).view(-1,R)
+    for i in tqdm(range(numiter)):
+        r_hat = torch.tensor(datacube_generator(gauss_curvefit((r_pinv + lam * gaminv @ r_hat).view(21,N,R).cpu().numpy()))).to(device).view(-1,R)
+    gauss_curvefit = gauss_pmf_fitter2
+    return gauss_curvefit(r_hat.view(21,N,R).cpu().numpy()), []
+
+def tomoinv(
+    meas=None,
+    imager=None,
+    data_step='grad',
+    positivity=False,
+    proj='gauss',
+    init_recon=None,
+    stepsize=1e-1,
+    lam=1e-1,
+    numiter=20
+):
+    gauss_curvefit = gauss_pmf_fitter2
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if imager is not None:
+        meas = torch.tensor(imager.meas3dar.copy()).to(device)
+    else:
+        meas = torch.tensor(meas).to(device)
+    NK, N, R = meas.shape
+    H = torch.tensor(tomomtx_gen((21,N), orders=[0,-1,1]), dtype=torch.float64).to(device)
+    y = meas.view(-1,R)
+    Hty = H.T @ y
+    loss = []
+
+    if proj == 'gauss':
+        proj0 = lambda a : torch.tensor(datacube_generator(gauss_curvefit(a.view(21,N,R).cpu().numpy()))).to(device).view(-1,R)
+        if positivity:
+            def proj(a):
+                return proj0((a*(a>0)).to(a.dtype))
+        else:
+            proj = proj0
+    elif proj == 'positivity':
+        proj = lambda a: (a*(a>0)).to(a.dtype)
+    if data_step == 'inv':
+        gaminv = torch.linalg.inv(H.T@H+lam*torch.eye(21*N).to(device))
+        r_pinv = gaminv @ Hty
+        r_hat = proj(r_pinv)
+        for i in tqdm(range(numiter)):
+            r_hat = proj(r_pinv + lam * gaminv @ r_hat)
+            lam *= 0.95
+            loss.append(torch.norm(H@r_hat-y).cpu().numpy())
+    elif data_step == 'grad':
+        if init_recon is not None:
+            r_hat = torch.tensor(init_recon, dtype=y.dtype).to(device).view(-1,R)
+        else:
+            r_hat = torch.zeros((21*N,R), dtype=torch.float64).to(device)
+        for i in tqdm(range(numiter)):
+            Hr = H@r_hat
+            r_hat = proj(r_hat - stepsize*(H.T@Hr-Hty))
+            loss.append(torch.norm(H@r_hat-y).cpu().numpy())
+    gauss_curvefit = gauss_pmf_fitter2
+    return gauss_curvefit(r_hat.view(21,N,R).cpu().numpy()), loss
+
+
+def smart(
+        meas=None,
+        imager=None,
+        psi=0.2,
+        maxouter=5,
+        maxinner=20,
+        inf_prior_width=1.38
+):
+    if imager is not None:
+        meas = imager.meas3dar.copy()
+    NK, M, N = meas.shape
+    if inf_prior_width is not None:
+        infprior = gauss_pix(np.outer(np.arange(M),np.ones(M)), M//2, inf_prior_width)
+        meas = np.concatenate((meas, infprior[None]), axis=0)
+        meas[-1]*=meas[0].mean(axis=0)[None]/meas[-1].mean(axis=0)[None]
+        NK += 1 
+        
+    orders = imager.spectral_orders
+    inf=True if inf_prior_width is not None else False
+    orders = orders+['inf'] if inf else orders
     #initialize
     cubes = []
     cors = []
-    cube = np.ones((M,M,N))
+    int0 = meas[0].copy()
+    vel0 = np.zeros_like(int0)
+    width0 = 1.38*np.ones_like(vel0)
+    cube = datacube_generator(np.stack((int0,vel0,width0),axis=0))
     cubes.append(cube)
     k0 = np.array([0.25, 0.5, 0.25])
     k1 = np.outer(k0,k0)
     kernel = k0[None,None] * k1[:,:,None]
+
+    mtx = tomomtx_gen((M,M), orders=orders)
+    mtx_t = np.einsum('ijk->ikj', mtx.reshape(-1,M,M*M))
+    mtx_s = (np.sum(mtx_t,axis=2)<1).astype(int).reshape(-1,M,M)[:,:,:,None]
+    mtx_s = np.repeat(mtx_s, N, axis=3)
 
     for i in range(maxouter):
         print('Outer Iter: {}/{}'.format(i+1,maxouter))
@@ -269,7 +417,8 @@ def smart(
         cube = convolve(cube, kernel)
         for j in range(maxinner):
             # print('Inner Iter: {}/{}'.format(j+1,maxinner))
-            meas2 = forward_op_tomo_3d(cube, inf=inf)
+            # meas2 = forward_op_tomo_3d(cube, orders=orders, inf=inf)
+            meas2 = (mtx @ cube.reshape(-1,N)).reshape(meas.shape)
             # chi-square
             chi = np.mean(((meas-meas2)**2)/(meas+1e-7), axis=(1,2))
             unconverged = chi>0.0000000001
@@ -279,7 +428,10 @@ def smart(
             # cor = (meas/(meas2+1e-5))**(2/(3+1*(inf==True)))
             cor = (meas/(meas2+1e-5))**(2/(3))
             # cor = (meas2/meas)**2/3 # Warning!: reversed order in ESIS2022
-            Cor = forward_op_tomo_3d_transpose(cor, inf=inf)
+            # Cor = forward_op_tomo_3d_transpose(cor, orders=orders, inf=inf)
+            Cor = np.einsum('ijk,ikm->ijm',mtx_t, cor).reshape(NK,M,M,N)
+            Cor[mtx_s==1]=1
+
             Corr = np.prod(Cor[unconverged],axis=0)**(1/np.sum(unconverged))
             cube *= Corr
         print(f'chi:{chi}')
@@ -287,8 +439,11 @@ def smart(
         # cubes.append(cube)
     
     recon = gauss_pmf_fitter(cube)
+    # recon[2] = 1.42
+    # recon[1] = -0.01
+    # recon[0] = int0
     
-    return recon #, cubes
+    return recon , []
 
 def grad_descent_solver(
     imager=None,
@@ -322,7 +477,7 @@ def grad_descent_solver(
     xh_int = xh_int.requires_grad_()
     xh_vel = torch.zeros_like(
         xh_int, device=device, dtype=torch.float, requires_grad=True)
-    xh_width = 1.25*torch.ones_like(xh_int, device=device, dtype=torch.float)
+    xh_width = 1.38*torch.ones_like(xh_int, device=device, dtype=torch.float)
     xh_width = xh_width.requires_grad_()
 
     if OPTIMIZER.upper() == 'ADAM':
@@ -365,7 +520,6 @@ def grad_descent_solver(
     # xhs = np.array(xhs)
     losses = np.array(losses)
     recon = torch.stack((xh_int,xh_vel,xh_width), axis=-3).detach().cpu().numpy()
-
     # recon = Recon(recon=recon, losses=losses, imager=imager)
 
     return recon, losses
@@ -374,7 +528,7 @@ def nn_solver(
         imager=None,
         model_path='2023_01_19__17_18_44_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_35_dssize_full'
 ):
-    foldpath = glob.glob('../results/saved/'+model_path)[0]+'/'
+    foldpath = glob.glob('/home/kamo/resources/slitless/python/results/saved/'+'*'+model_path+'*')[0]+'/'
     net = net_loader(foldpath)
     net.eval()
     recon = predict(net, imager.meas3dar.copy())
@@ -397,7 +551,9 @@ def scipy_solver(
         if mask is None:
             a3=0
         intensity, doppler, linewidth = np.reshape(x, (3,aa,bb))
-        diff = forward_op(intensity, doppler, linewidth, pixelated=imager.pixelated, mask=mask) - meas
+        diff = forward_op(intensity, doppler, linewidth,
+            pixelated=imager.pixelated, mask=mask,
+            spectral_orders=imager.spectral_orders) - meas
         regu = (
             lam_v*np.sum(np.diff(doppler, axis=0)**2) + 
             lam_w*np.sum(np.diff(linewidth, axis=0)**2) +
@@ -415,7 +571,7 @@ def scipy_solver(
 
     int0 = meas[0].copy()
     vel0 = np.zeros_like(int0)
-    width0 = np.ones_like(int0)
+    width0 = 1.38*np.ones_like(int0)
     x0 = np.stack((int0, vel0, width0), axis=0).flatten()
 
     rec = np.zeros((3,aa,bb))
@@ -432,3 +588,53 @@ def scipy_solver(
 
     losses = []
     return rec, losses
+
+def diffusion_solver(
+    imager=None,
+    grad_scale=[1,1,1],
+    num_samples=5
+):
+    meas = imager.meas3dar.copy()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    channels = len(imager.spectral_orders)
+    model = Unet(
+        channels=3,
+        dim = 64,
+        dim_mults = (1, 2, 4, 8),
+        flash_attn = True
+    ).to(device)
+    data = torch.load('/home/kamo/resources/denoising-diffusion-pytorch/results/model-10.pt', map_location=device, weights_only=True)
+    adapted_dict = {k[6:]: v for k, v in data['model'].items() if k.startswith('model.')}
+    model.load_state_dict(adapted_dict)
+    model.eval()
+
+    def forward_op(x, device=None):
+        return forward_op_torch(
+        true_intensity=x[:,0], 
+        true_doppler=x[:,1], 
+        true_linewidth=x[:,2], 
+        device=device
+    )
+
+    # Initialize the diffusion process
+    diffusion = GaussianDiffusion(
+        model,
+        image_size = 64,
+        timesteps = 1000,           # number of steps
+        sampling_timesteps = 1000,    # number of sampling timesteps (using ddim for faster inference [see citation for ddim paper])
+        recon = True,
+        measurement=torch.tensor(meas).to(device),
+        beta_schedule='cosine',
+        grad_scale=torch.tensor(grad_scale).to(device),
+        forward_op=forward_op,
+        device=device,
+        mode='all'
+    )
+
+    # Generate new samples
+    samples, norms, grad_norms, rmses = diffusion.sample(batch_size=num_samples)
+
+    recon = samples.mean(dim=0).detach().cpu().numpy()
+
+    return recon, norms

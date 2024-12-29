@@ -23,10 +23,12 @@ def predict(net, meas):
 
 def net_loader(path):
     modpath = path+'/best_model.pth'
+
     with open(path+'/summary.txt', 'r') as summary_text:
         lines = summary_text.readlines()
     parser = lambda key: [i for i in lines if key in i][0].split('= ')[-1].split(' \n')[0]
     start_filters = int(parser('Number of starting'))
+    in_channels = int(parser('Number of Detectors'))
     outch = parser('Output Channels')
     out_channels = 3 if outch=='all' else 1
     ksizes=eval(parser('Kernel Size'))
@@ -34,7 +36,7 @@ def net_loader(path):
     numlayers = len(ksizes)
     numlayers = 4 if numlayers==1 else numlayers
     net = UNet(
-        in_channels=3,
+        in_channels=in_channels,
         out_channels=out_channels,
         numlayers=numlayers,
         outch_type=outch,
@@ -142,71 +144,71 @@ def plot_recons(net, valloader, numim, savedir):
 
     matplotlib.use('Agg')
     for i in range(numim):
-        fig, ax = plt.subplots(3,3, figsize=(13,7))
-        im=ax[0,0].imshow(x[i,0], cmap='hot')
-        ax[0,0].set_title('Meas 0')
+        fig, ax = plt.subplots(2,3, figsize=(13,7))
+        # im=ax[0,0].imshow(x[i,0], cmap='hot')
+        # ax[0,0].set_title('Meas 0')
+        # fig.colorbar(im, ax=ax[0,0])
+        # im=ax[0,1].imshow(x[i,1], cmap='hot')
+        # ax[0,1].set_title('Meas -1')
+        # fig.colorbar(im, ax=ax[0,1])
+        # im=ax[0,2].imshow(x[i,2], cmap='hot')
+        # ax[0,2].set_title('Meas +1')
+        # fig.colorbar(im, ax=ax[0,2])
+        im=ax[0,0].imshow(y[i,0], cmap='hot')
+        ax[0,0].set_title('True Intensity')
         fig.colorbar(im, ax=ax[0,0])
-        im=ax[0,1].imshow(x[i,1], cmap='hot')
-        ax[0,1].set_title('Meas -1')
+        im=ax[0,1].imshow(y[i,1], cmap='seismic')
+        ax[0,1].set_title('True Velocity')
         fig.colorbar(im, ax=ax[0,1])
-        im=ax[0,2].imshow(x[i,2], cmap='hot')
-        ax[0,2].set_title('Meas +1')
+        im=ax[0,2].imshow(y[i,2], cmap='plasma')
+        ax[0,2].set_title('True Linewidth')
         fig.colorbar(im, ax=ax[0,2])
-        im=ax[1,0].imshow(y[i,0], cmap='hot')
-        ax[1,0].set_title('True Intensity')
-        fig.colorbar(im, ax=ax[1,0])
-        im=ax[1,1].imshow(y[i,1], cmap='seismic')
-        ax[1,1].set_title('True Velocity')
-        fig.colorbar(im, ax=ax[1,1])
-        im=ax[1,2].imshow(y[i,2], cmap='plasma')
-        ax[1,2].set_title('True Linewidth')
-        fig.colorbar(im, ax=ax[1,2])
         if net.outch_type == 'all':
-            im=ax[2,0].imshow(out[i,0], cmap='hot')
-            ax[2,0].set_title(
+            im=ax[1,0].imshow(out[i,0], cmap='hot')
+            ax[1,0].set_title(
                 'Predicted Intensity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i,0], rmses[i,0]
                 )
             )
-            fig.colorbar(im, ax=ax[2,0])
-            im=ax[2,1].imshow(out[i,1], cmap='seismic')
-            ax[2,1].set_title(
+            fig.colorbar(im, ax=ax[1,0])
+            im=ax[1,1].imshow(out[i,1], cmap='seismic')
+            ax[1,1].set_title(
                 'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i,1], rmses[i,1]
                 )
             )
-            fig.colorbar(im, ax=ax[2,1])
-            im=ax[2,2].imshow(out[i,2], cmap='plasma')
-            ax[2,2].set_title(
+            fig.colorbar(im, ax=ax[1,1])
+            im=ax[1,2].imshow(out[i,2], cmap='plasma')
+            ax[1,2].set_title(
                 'Predicted Linewidth\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i,2], rmses[i,2]
                 )
             )
-            fig.colorbar(im, ax=ax[2,2])
+            fig.colorbar(im, ax=ax[1,2])
         elif net.outch_type == 'int':
-            im=ax[2,0].imshow(out[i,0], cmap='hot')
-            ax[2,0].set_title(
+            im=ax[1,0].imshow(out[i,0], cmap='hot')
+            ax[1,0].set_title(
                 'Predicted Intensity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i], rmses[i]
                 )
             )
-            fig.colorbar(im, ax=ax[2,0])
+            fig.colorbar(im, ax=ax[1,0])
         elif net.outch_type == 'vel':
-            im=ax[2,1].imshow(out[i,0], cmap='seismic')
-            ax[2,1].set_title(
+            im=ax[1,1].imshow(out[i,0], cmap='seismic')
+            ax[1,1].set_title(
                 'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i], rmses[i]
                 )
             )
-            fig.colorbar(im, ax=ax[2,1])
+            fig.colorbar(im, ax=ax[1,1])
         elif net.outch_type == 'width':
-            im=ax[2,2].imshow(out[i,0], cmap='plasma')
-            ax[2,2].set_title(
+            im=ax[1,2].imshow(out[i,0], cmap='plasma')
+            ax[1,2].set_title(
                 'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i], rmses[i]
                 )
             )
-            fig.colorbar(im, ax=ax[2,2])
+            fig.colorbar(im, ax=ax[1,2])
 
         plt.tight_layout()
         plt.savefig(savedir+f'recons_{i}.png', dpi=300)
@@ -408,7 +410,7 @@ def plot_val_stats(net, valloader, savedir):
 
     return ssims, rmses, yvec, outvec
 
-def eval_snrlist(dbsnr_list, fold, data_dir, net):
+def eval_snrlist(dbsnr_list, noise_model, fold, data_dir, net):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net = net.to(device=device)
 
@@ -422,7 +424,7 @@ def eval_snrlist(dbsnr_list, fold, data_dir, net):
     rmses_l = []
     for dbsnr in dbsnr_list:
         print(dbsnr)
-        dset = dsetter(data_dir=data_dir, fold=fold, dbsnr=dbsnr)
+        dset = dsetter(data_dir=data_dir, noise_model=noise_model, fold=fold, dbsnr=dbsnr, numdetectors=net.in_channels)
         dloader = DataLoader(dset, batch_size=32, shuffle=True, num_workers=8)
 
         ssims=[]
