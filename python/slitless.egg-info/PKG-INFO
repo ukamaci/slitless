@@ -1,0 +1,22 @@
+Metadata-Version: 2.1
+Name: slitless
+Version: 1
+Summary: Slitless Spectral Imaging Reconstruction Code
+Home-page: https://github.com/ukamaci/slitless
+Author: Ulas Kamaci
+Author-email: ukamaci2@illinois.edu
+License: GPLv3
+Keywords: slitless spectral imaging reconstruction
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+
+# Slitless Spectral Imaging
+
+Python code for the simulation of forward imaging model, reconstruction
+algorithms, experiments, and plotting.
+
+#### Installation
+    cd slitless/python
+    pip install -e .
+
+

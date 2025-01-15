@@ -23,7 +23,7 @@ savepath = '/home/kamo/resources/slitless/python/results/recons/'
 save = False
 M = param4dar.shape[-1]
 numdetectors = 3
-dbsnr = 100000
+dbsnr = 50
 noise_model='poisson'
 # noise_model='gaussian'
 
@@ -73,20 +73,20 @@ Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, no
 #     positivity=True
 # )
 
-# 2D GD
-Rec = Reconstructor_Multi(
-    imager=Imgr,
-    param4dar=param4dar,
-    pix=True,
-    solver=grad_descent_solver,
-    maxiter=1000,
-    lam_i=1e-8,
-    # lam_v=0.0001,
-    # lam_w=4.6e-3,
-    lam_v=0.000278,
-    lam_w=6e-4,
-    LR=5e-2
-)
+# # 2D GD
+# Rec = Reconstructor_Multi(
+#     imager=Imgr,
+#     param4dar=param4dar,
+#     pix=True,
+#     solver=grad_descent_solver,
+#     maxiter=1000,
+#     lam_i=1e-8,
+#     # lam_v=0.0001,
+#     # lam_w=4.6e-3,
+#     lam_v=0.000278,
+#     lam_w=6e-4,
+#     LR=5e-2
+# )
 
 # # U-Net
 # Rec = Reconstructor_Multi(
@@ -94,19 +94,20 @@ Rec = Reconstructor_Multi(
 #     param4dar=param4dar,
 #     pix=True,
 #     solver=nn_solver,
-#     model_path='dbsnr_100_poisson_K_3_dssize_full'
+#     model_path='dbsnr_50_poisson_K_3_dssize_full'
 #     # model_path='2024_08_25__10_49_50_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_15_poisson_K_3_dssize_full'
 # )
 
-# # Diffusion DPS
-# Rec = Reconstructor_Multi(
-#     imager=Imgr,
-#     param4dar=param4dar,
-#     pix=True,
-#     solver=diffusion_solver,
-#     grad_scale=[1,1,1],
-#     num_samples=10
-# )
+# Diffusion DPS
+Rec = Reconstructor_Multi(
+    imager=Imgr,
+    param4dar=param4dar,
+    pix=True,
+    solver=diffusion_solver,
+    model_path='model-10.pt',
+    grad_scale=[1,1,1],
+    num_samples=10
+)
 
 # # SMART
 # Rec = Reconstructor_Multi(
@@ -209,3 +210,10 @@ if save==True:
 
     with open(f'{savedir}/Rec.pickle', 'wb') as file:
         pickle.dump(Rec, file)
+
+# from slitless.recon import comparison_test_multi
+# path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
+# data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
+# savepath = '/home/kamo/resources/slitless/python/results/recons/'
+# Rec_result = comparison_test_multi(path_data, data, savepath, single_param4dar=True, save=False, numdetectors=3, dbsnr=50, 
+#                           noise_model='poisson', solver='diffusion', model_path='model-10.pt', grad_scale=[1,1,1], num_samples=10)

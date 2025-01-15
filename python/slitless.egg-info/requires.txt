@@ -1,0 +1,10 @@
+eispac
+ipython-cells
+matplotlib
+numpy
+pqdm
+scikit-image
+scipy
+seaborn
+torch
+tqdm
