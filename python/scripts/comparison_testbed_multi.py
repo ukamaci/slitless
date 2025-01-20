@@ -1,4 +1,5 @@
 from slitless.forward import Source, Imager, forward_op, datacube_generator
+from slitless.plotting import uiuc_im
 from slitless.recon import (smart, grad_descent_solver, scipy_solver, tomoinv,
     Reconstructor, Reconstructor_Multi, nn_solver, diffusion_solver)
 import numpy as np
@@ -14,8 +15,8 @@ path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 # data='eis_5_64x64.npy' # 64x64 EIS images
 data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
 
-param4dar = np.load(path_data+data)[[0]]
 # param4dar = np.load(path_data+data)
+param4dar = uiuc_im()
 if len(param4dar.shape)<4:
     param4dar = param4dar[np.newaxis]
 
@@ -123,7 +124,7 @@ Rec = Reconstructor_Multi(
 # )
 
 recons = Rec.solve(num_realizations=1)
-Rec.recons[0].plot_loss()
+# Rec.recons[0].plot_loss()
 fig, ax = recons[0].plot(compare=True, title=f'{Rec.solver.__name__}')
 print('mask: {}'.format(mask[:2,:2]))
 print('Solver: {}'.format(Rec.solver.__name__))
