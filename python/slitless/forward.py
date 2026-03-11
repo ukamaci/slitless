@@ -1,12 +1,14 @@
 import numpy as np
 import torch
 from scipy.special import erf
+import matplotlib
 import matplotlib.pyplot as plt
 from skimage.transform import resize
 from skimage.data import camera, shepp_logan_phantom, cell
 from scipy.optimize import minimize
 from mas.decorators import _vectorize
 from scipy.stats import poisson
+from scipy.ndimage import convolve1d
 
 def gauss(x, mean, sigma):
     return 1 / sigma / (2*np.pi)**0.5 * np.exp(-0.5*((x-mean)/sigma)**2)
@@ -72,7 +74,7 @@ def forward_op(
         ).transpose(1,0)
     return out
 
-def datacube_generator(param3d, pixelated=True, lamdim=21):
+def datacube_generator(param3d, pixelated=True, lamdim=64):
     # M,N = param3d.shape[1:]
     gauss_func = gauss_pix if pixelated else gauss
     cube = gauss_func(
@@ -216,6 +218,38 @@ def forward_op_tomo_3d_v0(dc, orders=[0,-1,1], inf=False):
         return np.stack(dcs2, axis=0)
 
 def forward_op_tomo_3d(dc, orders=[0,-1,1], inf=False):
+    # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
+    K,M,N = dc.shape
+    projs = []
+
+    for a in orders:
+        if a==0:
+            projs.append(np.sum(dc, axis=0))
+        else:
+            if abs(a)==1:
+                dcc = dc
+            else:
+                # 1. Base Boxcar (spectral continuity)
+                kernel = np.ones(abs(a)) / abs(a)
+                # 2. Fix Symmetry for Even Orders
+                if abs(a) % 2 == 0:
+                    # Convolve with [0.5, 0.5] to fix 0.5-pixel shift
+                    kernel = np.convolve(kernel, [0.5, 0.5])
+                dcc = convolve1d(dc, kernel, axis=1, mode='constant')
+            pad_len = abs(a)*(K-1)
+            dc_p = np.zeros((K, M + pad_len, N))
+            dc_p[:,:M] = dcc
+            for i,r in enumerate(np.arange(K)-K//2):
+                dc_p[i] = np.roll(dc_p[i], a*r, axis=0)
+            projs.append(np.sum(dc_p, axis=0)[:M])
+    
+    if inf is True:
+        dc_i = np.sum(dc, axis=1)
+        return np.array(projs), dc_i
+    else:
+        return np.array(projs)
+
+def forward_op_tomo_3d_old(dc, orders=[0,-1,1], inf=False):
     # axis 0 is lambda (index up -> lambda up), axis 1 is dispersion direction
     M,M,N = dc.shape
     projs = []
@@ -504,7 +538,8 @@ class Source():
         fig.colorbar(i2, ax=ax[2])
         ax[2].set_title(str_width)
         plt.tight_layout()
-        plt.show()
+        if matplotlib.get_backend().lower() != 'agg':
+            plt.show()
         return fig, ax
 
 class Imager():
@@ -548,6 +583,7 @@ class Imager():
         dbsnr=None,
         max_count=None,
         noise_model=None,
+        meas=None
     ):
         self.pixel_size = pixel_size
         self.dispersion_scale = pixel_size / dispersion
@@ -560,8 +596,11 @@ class Imager():
         self.dbsnr = dbsnr
         self.max_count = max_count
         self.noise_model = noise_model
+        if meas is not None:
+            self.meas3dar = meas
+            self.meas3dar_nn = meas
 
-    def topix(self, source):
+    def topix(self, source, intenscale=1):
         """
         Takes as input a Source object which has the physical units of 
         velocity and line width, and creates another Source object as an attribute
@@ -569,7 +608,7 @@ class Imager():
         """
         assert source.pix == False, "Source object is already in pixel dimensions"
         self.srpix = Source(
-            inten=source.inten,
+            inten=source.inten/intenscale,
             vel=source.vel*(source.wavelength/300/self.dispersion_scale),
             width=source.width/self.dispersion_scale*1000,
             wavelength=source.wavelength,
@@ -577,7 +616,7 @@ class Imager():
         )
         return self.srpix
 
-    def frompix(self, source, width_unit='A', array=False):
+    def frompix(self, source, width_unit='A', array=False, intenscale=1):
         """
         Takes as input a Source object which has the pixel units of 
         velocity and line width, and creates another Source object as an attribute
@@ -590,7 +629,7 @@ class Imager():
             if width_unit == 'km/s':
                 width *= 3e5 / source.wavelength
             self.srphy = Source(
-                inten=source.inten,
+                inten=source.inten*intenscale,
                 vel=vel,
                 width=width,
                 wavelength=source.wavelength,
@@ -599,6 +638,7 @@ class Imager():
             return self.srphy
         else:
             out = source.clone() if type(source)==torch.Tensor else source.copy()
+            out[...,0,:,:]*=intenscale
             out[...,1,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
             if width_unit=='km/s':
                 out[...,2,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
@@ -706,7 +746,7 @@ def add_noise(signal, dbsnr=None, max_count=None, noise_model='Gaussian', no_noi
     Returns:
         ndarray that is the noisy version of the input
     """
-    if no_noise is True:
+    if no_noise is True or noise_model is None:
         return signal
     assert noise_model.lower() in ('gaussian', 'poisson'), "invalid noise model"
     if noise_model.lower() == 'poisson' and max_count is None:
