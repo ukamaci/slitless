@@ -9,6 +9,29 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from multiprocessing import Pool
 
+stats = np.load('/home/kamo/resources/slitless/data/eis_data/datasets/dset_v4/norm_stats.npy', allow_pickle=True).item()
+WAVELENGTH = 195.119
+SPEEDOFLIGHT = 3e5
+
+def meas_transform(meas, stats=stats):
+    return meas/6000
+    # return meas/stats['int_max']
+def meas_inv_transform(meas, stats=stats):
+    return meas*6000
+    # return meas*stats['int_max']
+def param_transform(params, stats=stats):
+    params[0] /= 6000
+    params[1] = (params[1] - stats['vel_mean']) / stats['vel_std']
+    params[2] = (params[2] - stats['width_mean']) / stats['width_std']
+    return params
+def param_inv_transform(params, w_kms=False, stats=stats):
+    params[...,0,:,:] *= 6000
+    params[...,1,:,:] = stats['vel_std'] * params[...,1,:,:] + stats['vel_mean']
+    params[...,2,:,:] = stats['width_std'] * params[...,2,:,:] + stats['width_mean']
+    if w_kms: # conversion from A to km/s
+        params[...,2,:,:] *= SPEEDOFLIGHT/WAVELENGTH
+    return params
+
 class BasicDataset(Dataset):
     def __init__(self, data_dir, fold='train', transform=None,
         target_transform=None, dbsnr=None, noise_model=None, numdetectors=3):
@@ -49,14 +72,14 @@ class BasicDataset(Dataset):
     def __getitem__(self, idx):
         meas, params = self.data[idx]
 
-        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None,
-            noise_model=self.noise_model)
-
         if self.transform is not None:
             meas = self.transform(meas)
 
         if self.target_transform is not None:
             params = self.target_transform(params)
+
+        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None,
+            noise_model=self.noise_model)
 
         return meas, params
 
@@ -177,3 +200,5 @@ def data_rewriter_par():
     files = glob.glob('data/train/*')
     pool = Pool()
     pool.map(data_rewrite, files)
+
+# def eis_data_plotter(folder):

@@ -1,4 +1,4 @@
-import torch, copy, glob, time
+import torch, copy, glob, time, datetime, pickle, os
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import optim
@@ -7,6 +7,7 @@ from slitless.forward import (Source, Imager, forward_op_torch, forward_op,
     datacube_generator, tomomtx_gen)
 from slitless.measure import cycle_loss, compare_ssim, tv_loss
 from slitless.evaluate import net_loader, predict
+from slitless.data_loader import meas_transform as unet_meas_transform, param_inv_transform
 from scipy.optimize import minimize, curve_fit
 from scipy.ndimage import convolve
 from tqdm.auto import tqdm
@@ -18,12 +19,16 @@ class Reconstructor():
         *,
         imager=None,
         solver=None,
+        intenscale=1,
+        simulate_meas=True,
         **solver_params
     ):
         self.imager = imager 
         self.source = imager.srpix 
         self.solver = solver
+        self.intenscale = intenscale
         self.solver_params = solver_params
+        self.simulate_meas = simulate_meas
         self.tomo=True if self.solver=='smart' else False
 
     def solve(
@@ -31,10 +36,11 @@ class Reconstructor():
         num_realizations=1
     ):
         self.num_realizations = num_realizations
-        _ = self.imager.get_measurements(
-            dbsnr=self.imager.dbsnr, max_count=self.imager.max_count, 
-            noise_model=self.imager.noise_model, tomo=self.tomo
-        )
+        if self.simulate_meas:
+            _ = self.imager.get_measurements(
+                dbsnr=self.imager.dbsnr, max_count=self.imager.max_count, 
+                noise_model=self.imager.noise_model, tomo=self.tomo
+            )
         recons = []
         losses = []
         times = []
@@ -44,38 +50,66 @@ class Reconstructor():
                 max_count=self.imager.max_count, noise_model=self.imager.noise_model,
             )
 
+            if self.simulate_meas is False:
+                self.meas_transform()
             t0 = time.time()
             recon, loss = self.solver(
                 imager = self.imager,
                 **self.solver_params
             )
             t1 = time.time()
+            if self.simulate_meas is False:
+                recon = self.recon_inv_transform(recon)
+
             times.append(t1-t0)
             recons.append(recon)
             losses.append(loss)
         self.recons = Recon(recon=np.array(recons), losses=np.array(losses), 
-            times=np.array(times), imager=self.imager, source=self.source)
+            times=np.array(times), imager=self.imager, source=self.source,
+            intenscale=self.intenscale)
         self.recons.eval()
         self.times = np.array(times)
 
         return self.recons
+    
+    def meas_transform(self):
+        if self.solver.__name__=='nn_solver':
+            self.imager.meas3dar = unet_meas_transform(
+                self.imager.meas3dar.copy()*self.intenscale
+            )
         
+    def recon_inv_transform(self, recon):
+        if self.solver.__name__=='nn_solver':
+            return self.imager.topix(
+                Source(
+                    param3d=param_inv_transform(recon, w_kms=False),
+                    pix=False
+                ),
+                intenscale=self.intenscale
+            ).param3d
+        else:
+            return recon
 
 class Reconstructor_Multi():
     def __init__(
         self,
         *,
+        meas4dar=None,
         imager=None,
         param4dar=None,
         solver=None,
         pix=None,
+        intenscaling=False,
         **solver_params
     ):
         self.imager = imager 
+        self.meas4dar = meas4dar
         self.solver = solver
         self.param4dar = param4dar
         self.solver_params = solver_params
+        self.intenscaling = intenscaling
         self.pix = pix
+        self.simulate_meas = False if self.meas4dar is not None else True
 
     def solve(
         self,
@@ -108,14 +142,22 @@ class Reconstructor_Multi():
 
             self.sources.append(Sr)
 
+            intenscale = Sr.param3d[0].max() if self.intenscaling else 1
+            
             if self.pix==False:
-                self.imager.topix(Sr)
+                self.imager.topix(Sr, intenscale=intenscale)
             else:
                 self.imager.srpix = Sr
+
+            if self.meas4dar is not None:
+                self.imager.meas3dar_nn = self.meas4dar[i] / intenscale
+                self.imager.meas3dar = self.meas4dar[i] / intenscale
             
             Rec = Reconstructor(
                 imager=self.imager,
                 solver=self.solver,
+                intenscale=intenscale,
+                simulate_meas=self.simulate_meas,
                 **self.solver_params
             )
 
@@ -161,13 +203,15 @@ class Recon():
             losses=None,
             times=None,
             imager=None,
-            source=None
+            source=None,
+            intenscale=1
     ):
         self.recon = recon
         self.losses = losses
         self.times = times
         self.imager = imager
         self.source = source
+        self.intenscale = intenscale
         self.losses_avg = np.mean(self.losses, axis=0)
         self.times_avg = np.mean(self.times)
 
@@ -228,9 +272,9 @@ class Recon():
         recon_pix = self.recon
         truth_pix = np.repeat(truth_pix[np.newaxis,:], len(recon_pix), axis=0)
         truth_pix_mean = np.repeat(truth_pix_mean[np.newaxis,:], len(recon_pix), axis=0)
-        truth_phy = self.imager.frompix(truth_pix, width_unit='km/s', array=True)
-        truth_phy_mean = self.imager.frompix(truth_pix_mean, width_unit='km/s', array=True)
-        recon_phy = self.imager.frompix(recon_pix, width_unit='km/s', array=True)  
+        truth_phy = self.imager.frompix(truth_pix, width_unit='km/s', array=True, intenscale=self.intenscale)
+        truth_phy_mean = self.imager.frompix(truth_pix_mean, width_unit='km/s', array=True, intenscale=self.intenscale)
+        recon_phy = self.imager.frompix(recon_pix, width_unit='km/s', array=True, intenscale=self.intenscale)  
 
         self.ssim = compare_ssim(truth=truth_pix, estimate=recon_pix)
         self.rmse_pix = np.sqrt(np.mean((recon_pix-truth_pix)**2, axis=(-1,-2)))
@@ -607,6 +651,7 @@ def diffusion_solver(
         flash_attn = True
     ).to(device)
     # data = torch.load('/home/kamo/resources/denoising-diffusion-pytorch/results/model-10.pt', map_location=device, weights_only=True)
+    # data = torch.load('/home/kamo/resources/denoising-diffusion-pytorch/results_lr_5e-6/'+model_path, map_location=device, weights_only=True)
     data = torch.load('/home/kamo/resources/denoising-diffusion-pytorch/results/'+model_path, map_location=device, weights_only=True)
     adapted_dict = {k[6:]: v for k, v in data['model'].items() if k.startswith('model.')}
     model.load_state_dict(adapted_dict)
