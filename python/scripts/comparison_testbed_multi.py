@@ -8,24 +8,36 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from tqdm.auto import tqdm
 from torch.utils.data import DataLoader
-from slitless.data_loader import BasicDataset
+from slitless.data_loader import param_inv_transform
 
 path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 # data='apj19_20x20.npy' # 20x20 APJ2019 image
 # data='eis_5_64x64.npy' # 64x64 EIS images
-data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
+# data='diff_samples.npy' # 5 of 64x64 Diffusion generated images
+# data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
+data='eis_train_5_dsetv4.npy' # 64x64 EIS images
 
-# param4dar = np.load(path_data+data)
-param4dar = uiuc_im()
-if len(param4dar.shape)<4:
-    param4dar = param4dar[np.newaxis]
+# # param4dar = uiuc_im()
+# param4dar = np.load(path_data+data)#[[1]]
+# if len(param4dar.shape)<4:
+#     param4dar = param4dar[np.newaxis]
+# source_pix = True
+# intenscaling=False
+# meas4dar=None
+
+# Loading script for dset_v4 data
+data = np.load(path_data+data, allow_pickle=True).item()
+param4dar, meas4dar = data['param3d'], data['meas']
+source_pix = False
+intenscaling = True
 
 savepath = '/home/kamo/resources/slitless/python/results/recons/'
 save = False
 M = param4dar.shape[-1]
 numdetectors = 3
 dbsnr = 50
-noise_model='poisson'
+noise_model=None # Noise-free measurements
+# noise_model='poisson'
 # noise_model='gaussian'
 
 def inf_priorer(param4dar):
@@ -49,8 +61,9 @@ Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, no
 # Rec = Reconstructor_Multi(
 #     imager=Imgr,
 #     param4dar=param4dar,
-#     pix=True,
+#     pix=source_pix,
 #     solver=scipy_solver,
+#     intenscaling=intenscaling,
 #     DATA_FIDELITY='L2',
 #     OPTIMIZER='L-BFGS-B',
 #     # OPTIMIZER='Nelder-Mead',
@@ -64,7 +77,7 @@ Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, no
 # Rec = Reconstructor_Multi(
 #     imager=Imgr,
 #     param4dar=param4dar,
-#     pix=True,
+#     pix=source_pix,
 #     solver=tomoinv,
 #     lam=1e-2,
 #     stepsize=3e-2,
@@ -78,7 +91,7 @@ Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, no
 # Rec = Reconstructor_Multi(
 #     imager=Imgr,
 #     param4dar=param4dar,
-#     pix=True,
+#     pix=source_pix,
 #     solver=grad_descent_solver,
 #     maxiter=1000,
 #     lam_i=1e-8,
@@ -92,36 +105,41 @@ Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, no
 # # U-Net
 # Rec = Reconstructor_Multi(
 #     imager=Imgr,
+#     meas4dar=meas4dar,
 #     param4dar=param4dar,
-#     pix=True,
+#     pix=source_pix,
 #     solver=nn_solver,
-#     model_path='dbsnr_50_poisson_K_3_dssize_full'
+#     intenscaling=intenscaling,
+#     # model_path='dbsnr_50_poisson_K_3_dssize_full',
 #     # model_path='2024_08_25__10_49_50_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_15_poisson_K_3_dssize_full'
+#     model_path='2026_01_29__17_52_45_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_dssize_full'
 # )
 
-# Diffusion DPS
-Rec = Reconstructor_Multi(
-    imager=Imgr,
-    param4dar=param4dar,
-    pix=True,
-    solver=diffusion_solver,
-    model_path='model-10.pt',
-    grad_scale=[1,1,1],
-    num_samples=10
-)
-
-# # SMART
+# # Diffusion DPS
 # Rec = Reconstructor_Multi(
 #     imager=Imgr,
 #     param4dar=param4dar,
-#     pix=True,
-#     solver=smart,
-#     psi=0.2,
-#     maxouter=5,
-#     maxinner=20,
-#     inf_prior_width=1.38
-#     # inf_prior_width=None
+#     pix=source_pix,
+#     solver=diffusion_solver,
+#     model_path='model-10.pt',
+#     grad_scale=[1,1,1],
+#     num_samples=10
 # )
+
+# SMART
+Rec = Reconstructor_Multi(
+    imager=Imgr,
+    meas4dar=meas4dar,
+    param4dar=param4dar,
+    pix=source_pix,
+    solver=smart,
+    intenscaling=intenscaling,
+    psi=0.2,
+    maxouter=5,
+    maxinner=20,
+    inf_prior_width=1.38
+    # inf_prior_width=None
+)
 
 recons = Rec.solve(num_realizations=1)
 # Rec.recons[0].plot_loss()
@@ -217,4 +235,4 @@ if save==True:
 # data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
 # savepath = '/home/kamo/resources/slitless/python/results/recons/'
 # Rec_result = comparison_test_multi(path_data, data, savepath, single_param4dar=True, save=False, numdetectors=3, dbsnr=50, 
-#                           noise_model='poisson', solver='diffusion', model_path='model-10.pt', grad_scale=[1,1,1], num_samples=10)
+#                           noise_model='poisson', solver='diffusion', model_path='model-10.pt', grad_scale=[1,1,1], num_samples=10
