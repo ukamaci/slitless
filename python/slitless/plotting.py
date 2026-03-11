@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+import cv2
 import random
 
 def barplot_group(data, labels_gr, labels_mem, ylabel, title, savedir=None):
@@ -98,8 +99,8 @@ def uiuc_im():
     imax= im.max()
     imin = im.min()
     im[0] = (im[0]-imin)/(imax-imin)
-    im[1] = (im[1]-imin)/(imax-imin)*2 - 1
-    im[2] = (im[2]-imin)/(imax-imin) + 1
+    im[1] = (im[1]-imin)/(imax-imin)*1.2 - 0.2
+    im[2] = (im[2]-imin)/(imax-imin)*0.8 + 1.2
     return im
     
 # metrics_dict = {
@@ -114,6 +115,51 @@ def uiuc_im():
 #     ],
 #     'swept_arr': [2,3,4,5]
 # }
+
+def generate_plus_cross(size=100, line_width=3, sigma=1):
+    """
+    Generates an array with a superposition of plus (+) and cross (×) signs using OpenCV functions.
+    :param size: Size of the square array
+    :param line_width: Width of the lines forming the symbols
+    :return: 2D NumPy array
+    """
+    arr = np.zeros((size, size), dtype=np.uint8)
+    center = size // 2
+    
+    # Draw plus sign (+) with anti-aliasing
+    cv2.line(arr, (0, center), (size-1, center), 255, line_width, cv2.LINE_AA)  # Horizontal line
+    cv2.line(arr, (center, 0), (center, size-1), 255, line_width, cv2.LINE_AA)  # Vertical line
+    
+    # Draw cross sign (×) with anti-aliasing
+    cv2.line(arr, (0, 0), (size-1, size-1), 255, line_width, cv2.LINE_AA)  # Main diagonal
+    cv2.line(arr, (0, size-1), (size-1, 0), 255, line_width, cv2.LINE_AA)  # Anti-diagonal
+    
+    # Apply Gaussian blur for smoother transitions
+    arr = cv2.GaussianBlur(arr, (5, 5), sigmaX=sigma, sigmaY=sigma)
+    
+    return arr
+
+def generate_horizontal_lines(size=100, num_lines=5, line_width=3, sigma=1):
+    """
+    Generates an array with equispaced horizontal lines.
+    :param size: Size of the square array
+    :param num_lines: Number of horizontal lines
+    :param line_width: Width of the lines
+    :param sigma: Standard deviation for Gaussian blur
+    :return: 2D NumPy array
+    """
+    arr = np.zeros((size, size), dtype=np.uint8)
+    spacing = size // (num_lines + 1)
+    
+    # Draw horizontal lines with anti-aliasing
+    for i in range(1, num_lines + 1):
+        y = i * spacing
+        cv2.line(arr, (0, y), (size - 1, y), 255, line_width)
+    
+    # Apply Gaussian blur for smoother transitions
+    arr = cv2.GaussianBlur(arr, (5, 5), sigmaX=sigma, sigmaY=sigma)
+    
+    return arr
 
 def comparison_sweep(*, methods=None, parameter=None, swept_param=None, metric=None,
 array=None, swept_arr=None):
