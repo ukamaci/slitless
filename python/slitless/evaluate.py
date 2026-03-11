@@ -6,7 +6,8 @@ import torch, glob, os
 from slitless.measure import compare_ssim, nrmse
 from slitless.networks.unet import UNet
 from torch.utils.data import DataLoader
-from slitless.data_loader import BasicDataset, OntheflyDataset
+from slitless.data_loader import (BasicDataset, param_inv_transform, 
+    meas_inv_transform, param_transform, meas_transform)
 from slitless.plotting import barplot_group
 
 def predict(net, meas):
@@ -112,7 +113,7 @@ def plot_recons_gd(*,meas, truth, recon, savedir):
         pass
 
 
-def plot_recons(net, valloader, numim, savedir):
+def plot_recons(net, valloader, numim, savedir, denormalize=False):
     if not os.path.exists(savedir):
         os.mkdir(savedir)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -125,6 +126,10 @@ def plot_recons(net, valloader, numim, savedir):
         out = net(x)
     out = np.array(out.cpu())
     x = np.array(x.cpu())
+    if denormalize:
+        out = param_inv_transform(out, w_kms=True)
+        y = param_inv_transform(y, w_kms=True)
+        x = meas_inv_transform(x)
     if not hasattr(net, 'outch_type'):
         net.outch_type = 'all'
 
@@ -144,71 +149,71 @@ def plot_recons(net, valloader, numim, savedir):
 
     matplotlib.use('Agg')
     for i in range(numim):
-        fig, ax = plt.subplots(2,3, figsize=(13,7))
-        # im=ax[0,0].imshow(x[i,0], cmap='hot')
-        # ax[0,0].set_title('Meas 0')
-        # fig.colorbar(im, ax=ax[0,0])
-        # im=ax[0,1].imshow(x[i,1], cmap='hot')
-        # ax[0,1].set_title('Meas -1')
-        # fig.colorbar(im, ax=ax[0,1])
-        # im=ax[0,2].imshow(x[i,2], cmap='hot')
-        # ax[0,2].set_title('Meas +1')
-        # fig.colorbar(im, ax=ax[0,2])
-        im=ax[0,0].imshow(y[i,0], cmap='hot')
-        ax[0,0].set_title('True Intensity')
+        fig, ax = plt.subplots(3,3, figsize=(13,7))
+        im=ax[0,0].imshow(x[i,0], cmap='hot')
+        ax[0,0].set_title('Meas 0')
         fig.colorbar(im, ax=ax[0,0])
-        im=ax[0,1].imshow(y[i,1], cmap='seismic')
-        ax[0,1].set_title('True Velocity')
+        im=ax[0,1].imshow(x[i,1], cmap='hot')
+        ax[0,1].set_title('Meas -1')
         fig.colorbar(im, ax=ax[0,1])
-        im=ax[0,2].imshow(y[i,2], cmap='plasma')
-        ax[0,2].set_title('True Linewidth')
+        im=ax[0,2].imshow(x[i,2], cmap='hot')
+        ax[0,2].set_title('Meas +1')
         fig.colorbar(im, ax=ax[0,2])
+        im=ax[1,0].imshow(y[i,0], cmap='hot')
+        ax[1,0].set_title('True Intensity')
+        fig.colorbar(im, ax=ax[1,0])
+        im=ax[1,1].imshow(y[i,1], cmap='seismic')
+        ax[1,1].set_title('True Velocity')
+        fig.colorbar(im, ax=ax[1,1])
+        im=ax[1,2].imshow(y[i,2], cmap='plasma')
+        ax[1,2].set_title('True Linewidth')
+        fig.colorbar(im, ax=ax[1,2])
         if net.outch_type == 'all':
-            im=ax[1,0].imshow(out[i,0], cmap='hot')
-            ax[1,0].set_title(
+            im=ax[2,0].imshow(out[i,0], cmap='hot')
+            ax[2,0].set_title(
                 'Predicted Intensity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i,0], rmses[i,0]
                 )
             )
-            fig.colorbar(im, ax=ax[1,0])
-            im=ax[1,1].imshow(out[i,1], cmap='seismic')
-            ax[1,1].set_title(
+            fig.colorbar(im, ax=ax[2,0])
+            im=ax[2,1].imshow(out[i,1], cmap='seismic')
+            ax[2,1].set_title(
                 'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i,1], rmses[i,1]
                 )
             )
-            fig.colorbar(im, ax=ax[1,1])
-            im=ax[1,2].imshow(out[i,2], cmap='plasma')
-            ax[1,2].set_title(
+            fig.colorbar(im, ax=ax[2,1])
+            im=ax[2,2].imshow(out[i,2], cmap='plasma')
+            ax[2,2].set_title(
                 'Predicted Linewidth\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i,2], rmses[i,2]
                 )
             )
-            fig.colorbar(im, ax=ax[1,2])
+            fig.colorbar(im, ax=ax[2,2])
         elif net.outch_type == 'int':
-            im=ax[1,0].imshow(out[i,0], cmap='hot')
-            ax[1,0].set_title(
+            im=ax[2,0].imshow(out[i,0], cmap='hot')
+            ax[2,0].set_title(
                 'Predicted Intensity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i], rmses[i]
                 )
             )
-            fig.colorbar(im, ax=ax[1,0])
+            fig.colorbar(im, ax=ax[2,0])
         elif net.outch_type == 'vel':
-            im=ax[1,1].imshow(out[i,0], cmap='seismic')
-            ax[1,1].set_title(
+            im=ax[2,1].imshow(out[i,0], cmap='seismic')
+            ax[2,1].set_title(
                 'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i], rmses[i]
                 )
             )
-            fig.colorbar(im, ax=ax[1,1])
+            fig.colorbar(im, ax=ax[2,1])
         elif net.outch_type == 'width':
-            im=ax[1,2].imshow(out[i,0], cmap='plasma')
-            ax[1,2].set_title(
+            im=ax[2,2].imshow(out[i,0], cmap='plasma')
+            ax[2,2].set_title(
                 'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
                     ssims[i], rmses[i]
                 )
             )
-            fig.colorbar(im, ax=ax[1,2])
+            fig.colorbar(im, ax=ax[2,2])
 
         plt.tight_layout()
         plt.savefig(savedir+f'recons_{i}.png', dpi=300)
@@ -270,39 +275,39 @@ def joint_plotter(truth, recon, savedir):
 
     matplotlib.use('Agg')
     # fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], kind='hex', gridsize=100)
-    fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], kind='hex', ylim=[-0.03,0.03], gridsize=100)
-    fg.fig.suptitle('Intensity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
+    fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], xlim=[0,5e3], ylim=[-2e2,2e2], kind='hex', gridsize=100)
+    fg.figure.suptitle('Intensity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
     fg.set_axis_labels('Intensity', 'Intensity Error')
-    fg.fig.tight_layout()
+    fg.figure.tight_layout()
     plt.grid(which='both', axis='both')
     plt.savefig(savedir+'intensity_stats.png', dpi=300)
     # fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', gridsize=100)
-    fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', ylim=[-0.2,0.2], xlim=[-0.4,0.4], gridsize=300)
-    fg.fig.suptitle('Velocity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
+    fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', xlim=[-15,15], ylim=[-15,15], gridsize=300)
+    fg.figure.suptitle('Velocity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
     fg.set_axis_labels('Velocity', 'Velocity Error')
-    fg.fig.tight_layout()
+    fg.figure.tight_layout()
     plt.grid(which='both', axis='both')
     plt.savefig(savedir+'velocity_stats.png', dpi=300)
     # fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], kind='hex', gridsize=100)
-    fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], kind='hex', ylim=[-0.25,0.25], xlim=[1,1.7], gridsize=100)
-    fg.fig.suptitle('Linewidth Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
+    fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], xlim=[35,60], ylim=[-8,8], kind='hex', gridsize=100)
+    fg.figure.suptitle('Linewidth Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
     fg.set_axis_labels('Linewidth', 'Linewidth Error')
-    fg.fig.tight_layout()
+    fg.figure.tight_layout()
     plt.grid(which='both', axis='both')
     plt.savefig(savedir+'linewidth_stats.png', dpi=300)
 
     # Cross dependence of vel&width errors on intensity
-    fg=sns.jointplot(x=truth[0], y=recon[1]-truth[1], kind='hex', gridsize=100)
+    fg=sns.jointplot(x=truth[0], y=recon[1]-truth[1], xlim=[0,5e3], ylim=[-8,8], kind='hex', gridsize=100)
     # fg=sns.jointplot(x=truth[0], y=recon[1]-truth[1], kind='hex', ylim=[-0.4,0.4], gridsize=100)
-    fg.fig.suptitle('Velocity Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
+    fg.figure.suptitle('Velocity Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
     fg.set_axis_labels('Intensity', 'Velocity Error')
-    fg.fig.tight_layout()
+    fg.figure.tight_layout()
     plt.savefig(savedir+'velocity_stats_vs_inten.png', dpi=300)
-    fg=sns.jointplot(x=truth[0], y=recon[2]-truth[2], kind='hex', gridsize=100)
+    fg=sns.jointplot(x=truth[0], y=recon[2]-truth[2], xlim=[0,5e3], ylim=[-8,8], kind='hex', gridsize=100)
     # fg=sns.jointplot(x=truth[0], y=recon[2]-truth[2], kind='hex', ylim=[-0.5,0.5], gridsize=100)
-    fg.fig.suptitle('Linewidth Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
+    fg.figure.suptitle('Linewidth Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
     fg.set_axis_labels('Intensity', 'Linewidth Error')
-    fg.fig.tight_layout()
+    fg.figure.tight_layout()
     plt.savefig(savedir+'linewidth_stats_vs_inten.png', dpi=300)
 
     plt.close('all')
@@ -341,6 +346,9 @@ def plot_val_stats(net, valloader, savedir):
         with torch.no_grad():
             outputs = net(inputs)
             outputs = np.array(outputs.cpu())
+            outputs = param_inv_transform(outputs, w_kms=True)
+            y1 = param_inv_transform(y1, w_kms=True)
+            inputs = meas_inv_transform(inputs)
             ssim0 = compare_ssim(truth=y1, estimate=outputs)
             rmse0 = nrmse(truth=y1, estimate=outputs, normalization=None)
             ssims.extend(ssim0.squeeze())
@@ -477,20 +485,19 @@ def meanest_errcalc(trainmeans, dataloader):
     return ssim, rmse, mae
 
 if __name__ == '__main__':
-    # foldname0 = '2022_10_15__18_56_55_NF_64_BS_4_LR_0.001_EP_250_KSIZE_(3, 1)_MSE_LOSS_ADAM_all'
-    foldname0 = '2023_01_19__17_18_44_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_35_dssize_full'
+    # foldname0 = '2023_01_19__17_18_44_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_35_dssize_full'
+    foldname0 = '2026_01_24__15_28_17_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_dssize_full'
     foldpath = glob.glob('../results/saved/'+foldname0)[0]+'/'
     net = net_loader(foldpath)
     dsetname='eistest64'
     # dataset_path = glob.glob(f'../../data/eis_data/{dsetname}/')[0]
-    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v1/')[0]
-    fold = 'test'
-    dataset = BasicDataset(data_dir = dataset_path, fold=fold, dbsnr=35)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=8)
+    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
+    valset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='val', dbsnr=None, noise_model=None, numdetectors=3)
+    dataloader = DataLoader(valset, batch_size=32, shuffle=False, num_workers=8)
 
-    savedir = foldpath+f'{fold}_{dsetname}/'
-    if not os.path.exists(savedir):
-        os.mkdir(savedir)
+    savedir = foldpath
+    # if not os.path.exists(savedir):
+    #     os.mkdir(savedir)
 
     ssims, rmses, yvec, outvec = plot_val_stats(net, dataloader, savedir)
     # plot_recons(net, dataloader, 32, savedir+'figures/')

@@ -7,7 +7,8 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import datetime
 
-from slitless.data_loader import BasicDataset, OntheflyDataset
+from slitless.data_loader import (BasicDataset, OntheflyDataset,
+    meas_inv_transform, meas_transform, param_transform)
 from slitless.networks.unet import UNet
 from slitless.measure import nrmse, nmse_torch, combine_losses, cycle_loss, compare_ssim
 from slitless.common import outch_adjuster
@@ -135,22 +136,23 @@ if __name__ == '__main__':
     BILINEAR = True
     ksizes = [(3,1)]
     OPTIMIZER = 'ADAM'
-    LOSS = 'MSE'
-    # LOSS = 'NMSE'
+    # LOSS = 'MSE'
+    LOSS = 'NMSE'
     CYC_LOSS = False
     cyc_lam = 1
     CYC_ONLY = False
     LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
     OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
-    LOAD = False
+    LOAD = True
     otf = None # on the fly trainset generation 
-    loaded_model_path = '../results/saved/2022_10_14__22_24_44_NF_64_BS_4_LR_0.001_EP_30_KSIZE_(3, 1)_MSE_LOSS_ADAM_all/best_model.pth'
+    loaded_model_path = '../results/saved/2026_01_24__15_28_17_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_dssize_full/best_model.pth'
     # dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
-    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v2/')[0]
-    testset_path = glob.glob('../../data/eis_data/datasets/dset_v2/')[0]
+    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
+    testset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
     dbsnr = 100
-    noise_model = 'poisson'
+    # noise_model = 'poisson'
+    noise_model = None
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
     name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
@@ -170,9 +172,9 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    trainset = BasicDataset(data_dir=dataset_path, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
-    valset = BasicDataset(data_dir=dataset_path, fold='val', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
-    testset = BasicDataset(data_dir=testset_path, fold='test', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    trainset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    valset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='val', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    testset = BasicDataset(data_dir=testset_path, transform=meas_transform, target_transform=param_transform, fold='test', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
     trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
     valloader = DataLoader(valset, batch_size=32, shuffle=True, num_workers=8)
     testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=8)
@@ -324,7 +326,7 @@ if __name__ == '__main__':
 
     savedir = f'../results/saved/{name}/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
-    plot_recons(net, testloader, numim=32, savedir=savedir+'figures/')
+    plot_recons(net, testloader, numim=32, savedir=savedir+'figures/', denormalize=True)
     dbsnr_l = [15,25,50,None]
     ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, noise_model=noise_model, fold='test', 
     data_dir=testset_path, net=net)
