@@ -11,6 +11,7 @@ from slitless.data_loader import meas_transform as unet_meas_transform, param_in
 from scipy.optimize import minimize, curve_fit
 from scipy.ndimage import convolve
 from tqdm.auto import tqdm
+from joblib import Parallel, delayed
 from denoising_diffusion_pytorch import Unet, GaussianDiffusion
 
 class Reconstructor():
@@ -592,8 +593,6 @@ def scipy_solver(
 
     def obj_ls(x, meas=None, mask=None, lam_i=1e1, lam_v=1e1, lam_w=1e1):
         aa, bb = meas.shape[1:]
-        if mask is None:
-            a3=0
         intensity, doppler, linewidth = np.reshape(x, (3,aa,bb))
         diff = forward_op(intensity, doppler, linewidth,
             pixelated=imager.pixelated, mask=mask,
@@ -626,9 +625,84 @@ def scipy_solver(
             x0, 
             args=(meas[:,:,[i]], mask[:,[i]], lam_i, lam_v, lam_w), 
             method=OPTIMIZER,
-            options={'disp':False, 'maxiter':maxiter, 'adaptive':True}
+            options={'disp':False, 'maxiter':maxiter}
         )
         rec[:,:,i] = recon.x.reshape(3,aa)
+
+    losses = []
+    return rec, losses
+
+def _worker_scipy_col(x0, meas_slice, mask_slice, lam_i, lam_v, lam_w, 
+                      pixelated, spectral_orders, OPTIMIZER, maxiter, DATA_FIDELITY):
+    
+    def obj_ls_local(x, meas, mask, lam_i, lam_v, lam_w):
+        aa, bb = meas.shape[1:]
+        intensity, doppler, linewidth = np.reshape(x, (3,aa,bb))
+        diff = forward_op(intensity, doppler, linewidth,
+            pixelated=pixelated, mask=mask,
+            spectral_orders=spectral_orders) - meas
+        
+        regu = (
+            lam_v*np.sum(np.diff(doppler, axis=0)**2) + 
+            lam_w*np.sum(np.diff(linewidth, axis=0)**2) +
+            lam_i*np.sum(np.diff(intensity, axis=0)**2)
+        )
+
+        if DATA_FIDELITY == 'L2':
+            return np.sum(diff**2) + regu
+        elif DATA_FIDELITY == 'L1':
+            return np.sum(abs(diff)) + regu
+
+    res = minimize(
+        obj_ls_local, 
+        x0, 
+        args=(meas_slice, mask_slice, lam_i, lam_v, lam_w), 
+        method=OPTIMIZER,
+        options={'disp':False, 'maxiter':maxiter}
+    )
+    return res.x
+
+def scipy_solver_parallel(
+    imager=None,
+    OPTIMIZER = 'L-BFGS-B',
+    DATA_FIDELITY = 'L2', # 'L1' or 'L2'
+    lam_i = 5e2, # TV norm regularization parameter for intensity
+    lam_v = 5e2, # TV norm regularization parameter for velocity
+    lam_w = 1e0, # TV norm regularization parameter for width
+    maxiter=10000,
+    n_jobs=-1
+    ):
+
+    meas = imager.meas3dar.copy()
+    mask = imager.mask.copy()
+    aa, bb = meas[0].shape
+
+    int0 = meas[0].copy()
+    vel0 = np.zeros_like(int0)
+    width0 = 1.38*np.ones_like(int0)
+    
+    tasks = []
+    for i in range(bb):
+        x0 = np.stack( ( int0[:,i], vel0[:,i], width0[:,i] ), axis=0 ).flatten()
+        tasks.append((
+            x0, 
+            meas[:,:,[i]], 
+            mask[:,[i]], 
+            lam_i, lam_v, lam_w,
+            imager.pixelated,
+            imager.spectral_orders,
+            OPTIMIZER,
+            maxiter,
+            DATA_FIDELITY
+        ))
+
+    results = Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(_worker_scipy_col)(*t) for t in tasks
+    )
+    
+    rec = np.zeros((3,aa,bb))
+    for i, res_x in enumerate(results):
+        rec[:,:,i] = res_x.reshape(3,aa)
 
     losses = []
     return rec, losses

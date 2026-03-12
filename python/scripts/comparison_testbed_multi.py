@@ -1,6 +1,6 @@
 from slitless.forward import Source, Imager, forward_op, datacube_generator
 from slitless.plotting import uiuc_im
-from slitless.recon import (smart, grad_descent_solver, scipy_solver, tomoinv,
+from slitless.recon import (smart, grad_descent_solver, scipy_solver, scipy_solver_parallel, tomoinv,
     Reconstructor, Reconstructor_Multi, nn_solver, diffusion_solver)
 import numpy as np
 import datetime, pickle, shutil, os
@@ -16,9 +16,10 @@ path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 # data='diff_samples.npy' # 5 of 64x64 Diffusion generated images
 # data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
 data='eis_train_5_dsetv4.npy' # 64x64 EIS images
+# data='eis_val_5_dsetv4.npy' # 64x64 EIS images
 
 # # param4dar = uiuc_im()
-# param4dar = np.load(path_data+data)#[[1]]
+# param4dar = np.load(path_data+data)[[1]]
 # if len(param4dar.shape)<4:
 #     param4dar = param4dar[np.newaxis]
 # source_pix = True
@@ -27,9 +28,11 @@ data='eis_train_5_dsetv4.npy' # 64x64 EIS images
 
 # Loading script for dset_v4 data
 data = np.load(path_data+data, allow_pickle=True).item()
-param4dar, meas4dar = data['param3d'], data['meas']
+# param4dar, meas4dar = data['param3d'], data['meas']
+param4dar, meas4dar = data['param3d'][[4]], data['meas'][[4]]
 source_pix = False
 intenscaling = True
+# meas4dar=None
 
 savepath = '/home/kamo/resources/slitless/python/results/recons/'
 save = False
@@ -57,21 +60,22 @@ Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, no
 # m=Imgr.get_measurements(sources=sr)
 # Imgr.plot('poisson_np: {}'.format(poisson_sn))
 
-# # SCIPY
-# Rec = Reconstructor_Multi(
-#     imager=Imgr,
-#     param4dar=param4dar,
-#     pix=source_pix,
-#     solver=scipy_solver,
-#     intenscaling=intenscaling,
-#     DATA_FIDELITY='L2',
-#     OPTIMIZER='L-BFGS-B',
-#     # OPTIMIZER='Nelder-Mead',
-#     maxiter=10000,
-#     lam_i=1e0,
-#     lam_v=0.5,
-#     lam_w=30
-# )
+# SCIPY
+Rec = Reconstructor_Multi(
+    imager=Imgr,
+    param4dar=param4dar,
+    meas4dar=meas4dar,
+    pix=source_pix,
+    solver=scipy_solver_parallel,
+    intenscaling=intenscaling,
+    DATA_FIDELITY='L2',
+    OPTIMIZER='L-BFGS-B',
+    # OPTIMIZER='Nelder-Mead',
+    maxiter=10000,
+    lam_i=1e-8,
+    lam_v=0.025,
+    lam_w=0.01
+)
 
 # Tomoinv
 # Rec = Reconstructor_Multi(
@@ -126,20 +130,20 @@ Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, no
 #     num_samples=10
 # )
 
-# SMART
-Rec = Reconstructor_Multi(
-    imager=Imgr,
-    meas4dar=meas4dar,
-    param4dar=param4dar,
-    pix=source_pix,
-    solver=smart,
-    intenscaling=intenscaling,
-    psi=0.2,
-    maxouter=5,
-    maxinner=20,
-    inf_prior_width=1.38
-    # inf_prior_width=None
-)
+# # SMART
+# Rec = Reconstructor_Multi(
+#     imager=Imgr,
+#     meas4dar=meas4dar,
+#     param4dar=param4dar,
+#     pix=source_pix,
+#     solver=smart,
+#     intenscaling=intenscaling,
+#     psi=0.2,
+#     maxouter=5,
+#     maxinner=20,
+#     inf_prior_width=1.38
+#     # inf_prior_width=None
+# )
 
 recons = Rec.solve(num_realizations=1)
 # Rec.recons[0].plot_loss()
