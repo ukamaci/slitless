@@ -15,8 +15,8 @@ path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 # data='eis_5_64x64.npy' # 64x64 EIS images
 # data='diff_samples.npy' # 5 of 64x64 Diffusion generated images
 # data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
-data='eis_train_5_dsetv4.npy' # 64x64 EIS images
-# data='eis_val_5_dsetv4.npy' # 64x64 EIS images
+# data='eis_train_5_dsetv4.npy' # 64x64 EIS images
+data='eis_val_5_dsetv4.npy' # 64x64 EIS images
 
 # # param4dar = uiuc_im()
 # param4dar = np.load(path_data+data)[[1]]
@@ -28,8 +28,8 @@ data='eis_train_5_dsetv4.npy' # 64x64 EIS images
 
 # Loading script for dset_v4 data
 data = np.load(path_data+data, allow_pickle=True).item()
-# param4dar, meas4dar = data['param3d'], data['meas']
-param4dar, meas4dar = data['param3d'][[4]], data['meas'][[4]]
+param4dar, meas4dar = data['param3d'], data['meas']
+# param4dar, meas4dar = data['param3d'][[4]], data['meas'][[4]]
 source_pix = False
 intenscaling = True
 # meas4dar=None
@@ -38,9 +38,9 @@ savepath = '/home/kamo/resources/slitless/python/results/recons/'
 save = False
 M = param4dar.shape[-1]
 numdetectors = 3
-dbsnr = 50
-noise_model=None # Noise-free measurements
-# noise_model='poisson'
+dbsnr = 10
+# noise_model=None # Noise-free measurements
+noise_model='poisson'
 # noise_model='gaussian'
 
 def inf_priorer(param4dar):
@@ -52,30 +52,30 @@ def inf_priorer(param4dar):
 mask = np.array([[(i + j) % 2 for j in range(M)] for i in range(M)])
 mask= np.ones_like(mask)
 # print('Mask1')
-Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, noise_model=noise_model, 
-# Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, noise_model='gaussian', 
+Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise_model, 
+# Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, noise_model=noise_model, 
     spectral_orders=[0,-1,1,-2,2][:numdetectors])
 
 # sr = Source(param3d=param4dar[0],pix=True)
 # m=Imgr.get_measurements(sources=sr)
 # Imgr.plot('poisson_np: {}'.format(poisson_sn))
 
-# SCIPY
-Rec = Reconstructor_Multi(
-    imager=Imgr,
-    param4dar=param4dar,
-    meas4dar=meas4dar,
-    pix=source_pix,
-    solver=scipy_solver_parallel,
-    intenscaling=intenscaling,
-    DATA_FIDELITY='L2',
-    OPTIMIZER='L-BFGS-B',
-    # OPTIMIZER='Nelder-Mead',
-    maxiter=10000,
-    lam_i=1e-8,
-    lam_v=0.025,
-    lam_w=0.01
-)
+# # SCIPY
+# Rec = Reconstructor_Multi(
+#     imager=Imgr,
+#     param4dar=param4dar,
+#     meas4dar=meas4dar,
+#     pix=source_pix,
+#     solver=scipy_solver_parallel,
+#     intenscaling=intenscaling,
+#     DATA_FIDELITY='L2',
+#     OPTIMIZER='L-BFGS-B',
+#     # OPTIMIZER='Nelder-Mead',
+#     maxiter=10000,
+#     lam_i=1e-8,
+#     lam_v=0.025,
+#     lam_w=0.01
+# )
 
 # Tomoinv
 # Rec = Reconstructor_Multi(
@@ -106,18 +106,19 @@ Rec = Reconstructor_Multi(
 #     LR=5e-2
 # )
 
-# # U-Net
-# Rec = Reconstructor_Multi(
-#     imager=Imgr,
-#     meas4dar=meas4dar,
-#     param4dar=param4dar,
-#     pix=source_pix,
-#     solver=nn_solver,
-#     intenscaling=intenscaling,
-#     # model_path='dbsnr_50_poisson_K_3_dssize_full',
-#     # model_path='2024_08_25__10_49_50_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_15_poisson_K_3_dssize_full'
-#     model_path='2026_01_29__17_52_45_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_dssize_full'
-# )
+# U-Net
+Rec = Reconstructor_Multi(
+    imager=Imgr,
+    meas4dar=meas4dar,
+    param4dar=param4dar,
+    pix=source_pix,
+    solver=nn_solver,
+    intenscaling=intenscaling,
+    # model_path='dbsnr_50_poisson_K_3_dssize_full',
+    # model_path='2024_08_25__10_49_50_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_15_poisson_K_3_dssize_full'
+    # model_path='2026_01_29__17_52_45_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v4'
+    model_path='dbsnr_15_poisson_K_3_eis_v4'
+)
 
 # # Diffusion DPS
 # Rec = Reconstructor_Multi(
@@ -145,7 +146,7 @@ Rec = Reconstructor_Multi(
 #     # inf_prior_width=None
 # )
 
-recons = Rec.solve(num_realizations=1)
+recons = Rec.solve(num_realizations=10)
 # Rec.recons[0].plot_loss()
 fig, ax = recons[0].plot(compare=True, title=f'{Rec.solver.__name__}')
 print('mask: {}'.format(mask[:2,:2]))

@@ -40,6 +40,7 @@ class Reconstructor():
         if self.simulate_meas:
             _ = self.imager.get_measurements(
                 dbsnr=self.imager.dbsnr, max_count=self.imager.max_count, 
+                avg_count=self.imager.avg_count,
                 noise_model=self.imager.noise_model, tomo=self.tomo
             )
         recons = []
@@ -48,7 +49,8 @@ class Reconstructor():
         for i in range(num_realizations):
             self.imager.meas3dar = add_noise(
                 self.imager.meas3dar_nn, dbsnr=self.imager.dbsnr, 
-                max_count=self.imager.max_count, noise_model=self.imager.noise_model,
+                max_count=self.imager.max_count, avg_count=self.imager.avg_count, 
+                noise_model=self.imager.noise_model
             )
 
             if self.simulate_meas is False:

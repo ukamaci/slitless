@@ -582,6 +582,7 @@ class Imager():
         mask=None,
         dbsnr=None,
         max_count=None,
+        avg_count=None,
         noise_model=None,
         meas=None
     ):
@@ -595,6 +596,7 @@ class Imager():
         self.mask = mask
         self.dbsnr = dbsnr
         self.max_count = max_count
+        self.avg_count = avg_count
         self.noise_model = noise_model
         if meas is not None:
             self.meas3dar = meas
@@ -665,6 +667,7 @@ class Imager():
         tomo=False,
         dbsnr=None,
         max_count=None,
+        avg_count=None,
         noise_model=None,
         no_noise=None
     ):
@@ -686,6 +689,8 @@ class Imager():
             dbsnr = self.dbsnr
         if max_count is None:
             max_count = self.max_count
+        if avg_count is None:
+            avg_count = self.avg_count
         if noise_model is None:
             noise_model = self.noise_model
 
@@ -709,8 +714,8 @@ class Imager():
 
         self.meas3dar_nn = self.meas3dar.clone() if type(sources.inten)==torch.Tensor else self.meas3dar.copy()
         self.meas3dar = add_noise(
-            self.meas3dar, dbsnr=dbsnr, max_count=max_count, noise_model=noise_model,
-            no_noise=no_noise
+            self.meas3dar, dbsnr=dbsnr, max_count=max_count, avg_count=avg_count, 
+            noise_model=noise_model, no_noise=no_noise
         )
         
         return self.meas3dar
@@ -728,7 +733,7 @@ class Imager():
         plt.tight_layout()
         plt.show()
 
-def add_noise(signal, dbsnr=None, max_count=None, noise_model='Gaussian', no_noise=False):
+def add_noise(signal, dbsnr=None, max_count=None, avg_count=None, noise_model='Gaussian', no_noise=False):
     """
     Add noise to the given signal at the specified level.
 
@@ -739,6 +744,7 @@ def add_noise(signal, dbsnr=None, max_count=None, noise_model='Gaussian', no_noi
         the noise. For Poisson model, it is taken as the average snr where snr
         of a pixel is given by the square root of its value.
         max_count (int): Max number of photon counts in the given signal
+        avg_count (int): Average number of photon counts in the given signal
         noise_model (string): String that specifies the noise model. The 2 options are
         `Gaussian` and `Poisson`
         no_noise (bool): (default=False) If True, return the clean signal
@@ -749,8 +755,8 @@ def add_noise(signal, dbsnr=None, max_count=None, noise_model='Gaussian', no_noi
     if no_noise is True or noise_model is None:
         return signal
     assert noise_model.lower() in ('gaussian', 'poisson'), "invalid noise model"
-    if noise_model.lower() == 'poisson' and max_count is None:
-        max_count = dbsnr**2/0.9
+    if noise_model.lower() == 'poisson' and max_count is None and avg_count is None:
+        avg_count = dbsnr**2
 
     sig = signal.cpu().numpy() if type(signal)==torch.Tensor else signal
 
@@ -763,6 +769,10 @@ def add_noise(signal, dbsnr=None, max_count=None, noise_model='Gaussian', no_noi
             scalar = max_count / np.max(sig, axis=(-1,-2), keepdims=True)
             sig_scaled = sig * scalar
             # print('SNR:{}'.format(np.sqrt(sig_scaled.mean())))
+            out = poisson.rvs(sig_scaled) / scalar
+        elif avg_count is not None:
+            scalar = avg_count / np.mean(sig, axis=(-1,-2), keepdims=True)
+            sig_scaled = sig * scalar
             out = poisson.rvs(sig_scaled) / scalar
         else:
             avg_brightness = 10**(dbsnr / 20)**2
