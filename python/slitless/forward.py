@@ -769,16 +769,16 @@ def add_noise(signal, dbsnr=None, max_count=None, avg_count=None, noise_model='G
             scalar = max_count / np.max(sig, axis=(-1,-2), keepdims=True)
             sig_scaled = sig * scalar
             # print('SNR:{}'.format(np.sqrt(sig_scaled.mean())))
-            out = poisson.rvs(sig_scaled) / scalar
+            out = np.random.poisson(sig_scaled) / scalar
         elif avg_count is not None:
             scalar = avg_count / np.mean(sig, axis=(-1,-2), keepdims=True)
             sig_scaled = sig * scalar
-            out = poisson.rvs(sig_scaled) / scalar
+            out = np.random.poisson(sig_scaled) / scalar
         else:
             avg_brightness = 10**(dbsnr / 20)**2
             scalar = avg_brightness / sig.mean(axis=(-1,-2), keepdims=True)
             sig_scaled = sig * scalar
-            out = poisson.rvs(sig_scaled) / scalar
+            out = np.random.poisson(sig_scaled) / scalar
 
     if type(signal)==torch.Tensor:
         out = torch.from_numpy(out).to(device=signal.device, dtype=signal.dtype)
