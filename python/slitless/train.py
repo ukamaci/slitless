@@ -70,8 +70,9 @@ def train_net(net,
             running_loss += loss.item()
 
             outputs = outch_adjuster(out=outputs, true_out=true_outputs, outch_type=net.outch_type, action='extend')
-            running_rmse_train += torch.mean((true_outputs-outputs)**2, dim=(0,2,3)).cpu().detach().numpy()
-            running_ssim_train += compare_ssim(truth=true_outputs.cpu(), estimate=outputs.cpu().detach()).mean(axis=0)
+            with torch.no_grad():
+                running_rmse_train += torch.mean((true_outputs-outputs)**2, dim=(0,2,3)).cpu().numpy()
+                running_ssim_train += compare_ssim(truth=true_outputs.cpu().numpy(), estimate=outputs.detach().cpu().numpy()).mean(axis=0)
 
         # Normalizing the loss by the total number of train batches
         running_loss/=len(trainloader)
@@ -96,8 +97,8 @@ def train_net(net,
 
                     outputs = outch_adjuster(out=outputs, true_out=true_outputs, outch_type=net.outch_type, action='extend')
                     running_valloss += loss.item()
-                    running_rmse_val += torch.mean((true_outputs-outputs)**2, dim=(0,2,3)).cpu().detach().numpy()
-                    running_ssim_val += compare_ssim(truth=true_outputs.cpu(), estimate=outputs.cpu().detach()).mean(axis=0)
+                    running_rmse_val += torch.mean((true_outputs-outputs)**2, dim=(0,2,3)).cpu().numpy()
+                    running_ssim_val += compare_ssim(truth=true_outputs.cpu().numpy(), estimate=outputs.cpu().numpy()).mean(axis=0)
 
             running_valloss/=len(valloader)
             running_rmse_val/=len(valloader)
@@ -126,7 +127,7 @@ def train_net(net,
 
 if __name__ == '__main__':
     # ---------
-    numdetectors = 3
+    numdetectors = 5
     NUM_FILT = 64
     numlayers = 4
     LR = 2e-4
@@ -146,7 +147,7 @@ if __name__ == '__main__':
     out_channels = 3 if OUTCH=='all' else 1
     LOAD = True
     otf = None # on the fly trainset generation 
-    loaded_model_path = '../results/saved/2026_01_24__15_28_17_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_dssize_full/best_model.pth'
+    loaded_model_path = '../results/saved/2026_03_14__23_09_56_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_5_eis_v4/best_model.pth'
     # dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
     dataset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
     testset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
