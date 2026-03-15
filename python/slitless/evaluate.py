@@ -156,9 +156,10 @@ def plot_recons(net, valloader, numim, savedir, denormalize=False):
         im=ax[0,1].imshow(x[i,1], cmap='hot')
         ax[0,1].set_title('Meas -1')
         fig.colorbar(im, ax=ax[0,1])
-        im=ax[0,2].imshow(x[i,2], cmap='hot')
-        ax[0,2].set_title('Meas +1')
-        fig.colorbar(im, ax=ax[0,2])
+        if x.shape[1]>2: # this is to avoid error if numdetectors==2
+            im=ax[0,2].imshow(x[i,2], cmap='hot')
+            ax[0,2].set_title('Meas +1')
+            fig.colorbar(im, ax=ax[0,2])
         im=ax[1,0].imshow(y[i,0], cmap='hot')
         ax[1,0].set_title('True Intensity')
         fig.colorbar(im, ax=ax[1,0])
