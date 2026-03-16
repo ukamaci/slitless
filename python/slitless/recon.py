@@ -87,8 +87,7 @@ class Reconstructor():
                 Source(
                     param3d=param_inv_transform(recon, w_kms=False),
                     pix=False
-                ),
-                intenscale=self.intenscale
+                )
             ).param3d
         else:
             return recon
@@ -146,9 +145,10 @@ class Reconstructor_Multi():
             self.sources.append(Sr)
 
             intenscale = Sr.param3d[0].max() if self.intenscaling else 1
+            self.imager.intenscale=intenscale
             
             if self.pix==False:
-                self.imager.topix(Sr, intenscale=intenscale)
+                self.imager.topix(Sr)
             else:
                 self.imager.srpix = Sr
 
@@ -275,9 +275,9 @@ class Recon():
         recon_pix = self.recon
         truth_pix = np.repeat(truth_pix[np.newaxis,:], len(recon_pix), axis=0)
         truth_pix_mean = np.repeat(truth_pix_mean[np.newaxis,:], len(recon_pix), axis=0)
-        truth_phy = self.imager.frompix(truth_pix, width_unit='km/s', array=True, intenscale=self.intenscale)
-        truth_phy_mean = self.imager.frompix(truth_pix_mean, width_unit='km/s', array=True, intenscale=self.intenscale)
-        recon_phy = self.imager.frompix(recon_pix, width_unit='km/s', array=True, intenscale=self.intenscale)  
+        truth_phy = self.imager.frompix(truth_pix, width_unit='km/s', array=True)
+        truth_phy_mean = self.imager.frompix(truth_pix_mean, width_unit='km/s', array=True)
+        recon_phy = self.imager.frompix(recon_pix, width_unit='km/s', array=True)  
 
         self.ssim = compare_ssim(truth=truth_pix, estimate=recon_pix)
         self.rmse_pix = np.sqrt(np.mean((recon_pix-truth_pix)**2, axis=(-1,-2)))

@@ -584,7 +584,8 @@ class Imager():
         max_count=None,
         avg_count=None,
         noise_model=None,
-        meas=None
+        meas=None,
+        intenscale=1
     ):
         self.pixel_size = pixel_size
         self.dispersion_scale = pixel_size / dispersion
@@ -601,8 +602,9 @@ class Imager():
         if meas is not None:
             self.meas3dar = meas
             self.meas3dar_nn = meas
+        self.intenscale=intenscale
 
-    def topix(self, source, intenscale=1):
+    def topix(self, source):
         """
         Takes as input a Source object which has the physical units of 
         velocity and line width, and creates another Source object as an attribute
@@ -610,7 +612,7 @@ class Imager():
         """
         assert source.pix == False, "Source object is already in pixel dimensions"
         self.srpix = Source(
-            inten=source.inten/intenscale,
+            inten=source.inten/self.intenscale,
             vel=source.vel*(source.wavelength/300/self.dispersion_scale),
             width=source.width/self.dispersion_scale*1000,
             wavelength=source.wavelength,
@@ -618,7 +620,7 @@ class Imager():
         )
         return self.srpix
 
-    def frompix(self, source, width_unit='A', array=False, intenscale=1):
+    def frompix(self, source, width_unit='A', array=False):
         """
         Takes as input a Source object which has the pixel units of 
         velocity and line width, and creates another Source object as an attribute
@@ -631,7 +633,7 @@ class Imager():
             if width_unit == 'km/s':
                 width *= 3e5 / source.wavelength
             self.srphy = Source(
-                inten=source.inten*intenscale,
+                inten=source.inten*self.intenscale,
                 vel=vel,
                 width=width,
                 wavelength=source.wavelength,
@@ -640,7 +642,7 @@ class Imager():
             return self.srphy
         else:
             out = source.clone() if type(source)==torch.Tensor else source.copy()
-            out[...,0,:,:]*=intenscale
+            out[...,0,:,:]*=self.intenscale
             out[...,1,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
             if width_unit=='km/s':
                 out[...,2,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
