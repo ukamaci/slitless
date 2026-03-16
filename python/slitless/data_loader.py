@@ -163,7 +163,7 @@ class OntheflyDataset(Dataset):
 def dloadertesting():
     dataset_path = glob.glob('../../data/datasets/dset6*')[0]
     t0 = time.time()
-    trainset = OntheflyDataset2(data_dir=dataset_path, fold='train', dbsnr=35)
+    trainset = OntheflyDataset(data_dir=dataset_path, fold='train', dbsnr=35)
     trainloader = DataLoader(trainset, batch_size=4, shuffle=True, num_workers=16)
     print('Time Dataset Onthefly: {}'.format(time.time()-t0))
     t0 = time.time()
