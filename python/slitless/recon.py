@@ -1,4 +1,4 @@
-import torch, copy, glob, time, datetime, pickle, os
+import torch, copy, glob, time, datetime, pickle, os, eispac
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import optim
@@ -338,6 +338,81 @@ def gauss_curvefit(dc):
             param3d[:,i,j] = par
     return param3d
 
+def smart_fit_spectra_joblib(cube, tmplt, wave, errs=None, n_jobs=-1, component=0):
+    """
+    Fits a reconstructed 3D data cube from SMART using mpfit and an eispac template.
+    
+    Args:
+        cube: 3D numpy array of shape (lamdim, Y, X)
+        tmplt: eispac template object
+        wave: 1D array of shape (lamdim,) containing wavelength values
+        errs: 3D array of uncertainties. If None, assumes uniform errors.
+        n_jobs: Number of parallel jobs
+        component: Gaussian component index to extract from the template
+        
+    Returns:
+        param3d: Stacked array (3, Y, X) containing Intensity, Velocity (km/s), and Width (Angstroms).
+    """
+    import copy
+    from joblib import Parallel, delayed
+    from slitless.eistools import _worker_fit_chunk
+    from eispac.instr import calc_velocity
+
+    safe_data = np.transpose(cube, (1, 2, 0)).astype(np.float64)
+    Y, X, lamdim = safe_data.shape
+    
+    if errs is None:
+        safe_errs = np.ones_like(safe_data)
+    else:
+        safe_errs = np.transpose(errs, (1, 2, 0)).astype(np.float64)
+        
+    if wave.ndim == 1:
+        safe_wave = np.tile(wave, (Y, X, 1)).astype(np.float64)
+    else:
+        safe_wave = np.transpose(wave, (1, 2, 0)).astype(np.float64)
+
+    p_base = tmplt.parinfo
+    t_base = tmplt.template
+    
+    tasks = []
+    for y in range(Y):
+        tasks.append((
+            safe_wave[y, :, :], 
+            safe_data[y, :, :], 
+            safe_errs[y, :, :], 
+            t_base, 
+            copy.deepcopy(p_base), 
+            7 # min_points
+        ))
+
+    results = Parallel(n_jobs=n_jobs, backend="loky", verbose=0)(
+        delayed(_worker_fit_chunk)(t) for t in tasks
+    )
+    
+    full_params = np.stack([r[0] for r in results])
+    full_status = np.stack([r[2] for r in results])
+
+    idx_peak = component * 3
+    idx_cent = component * 3 + 1
+    idx_width = component * 3 + 2
+
+    raw_peak = full_params[:, :, idx_peak]
+    raw_cent = full_params[:, :, idx_cent]
+    raw_width = full_params[:, :, idx_width]
+
+    intensity = np.sqrt(2 * np.pi) * raw_peak * raw_width
+    rest_wave = p_base[idx_cent]['value'] 
+    
+    velocity = calc_velocity(raw_cent, rest_wave)
+
+    bad_mask = (full_status <= 0)
+    intensity[bad_mask] = 0
+    velocity[bad_mask] = 0
+    raw_width[bad_mask] = 0
+
+    param3d = np.stack((intensity, velocity, raw_width))
+    return param3d
+
 def tomoinv0(
     meas=None,
     imager=None,
@@ -425,7 +500,10 @@ def smart(
         psi=0.2,
         maxouter=5,
         maxinner=20,
-        inf_prior_width=1.38
+        inf_prior_width=1.38,
+        fitter='pmf',
+        tmplt=None,
+        n_jobs=-1
 ):
     if imager is not None:
         meas = imager.meas3dar.copy()
@@ -485,7 +563,24 @@ def smart(
         # cors.append(Cor)
         # cubes.append(cube)
     
-    recon = gauss_pmf_fitter(cube)
+    if fitter=='mpfit':
+        if tmplt is None:
+            template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
+            tmplt = eispac.read_template(template_filepath)
+        lamdim = cube.shape[0]
+        # Construct the wavelength grid assuming pixel units center around lamdim//2
+        wave = imager.srpix.wavelength + (imager.dispersion_scale / 1000) * (np.arange(lamdim) - lamdim // 2)
+        cube = cube / (imager.dispersion_scale / 1000) * imager.intenscale
+        
+        recon = smart_fit_spectra_joblib(cube, tmplt, wave=wave, n_jobs=n_jobs)
+        
+        # convert physical units (km/s, Angstroms) back to pixel units to match original format
+        recon[0] /= imager.intenscale
+        recon[1] = recon[1] * (imager.srpix.wavelength / 300 / imager.dispersion_scale)
+        recon[2] = recon[2] / (imager.dispersion_scale / 1000)
+    elif fitter=='pmf':
+        recon = gauss_pmf_fitter(cube)
+
     # recon[2] = 1.42
     # recon[1] = -0.01
     # recon[0] = int0
