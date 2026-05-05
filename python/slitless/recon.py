@@ -24,8 +24,8 @@ class Reconstructor():
         simulate_meas=True,
         **solver_params
     ):
-        self.imager = imager 
-        self.source = imager.srpix 
+        self.imager = copy.deepcopy(imager)
+        self.source = self.imager.srpix 
         self.solver = solver
         self.intenscale = intenscale
         self.solver_params = solver_params
@@ -585,7 +585,7 @@ def smart(
     # recon[1] = -0.01
     # recon[0] = int0
     
-    return recon , []
+    return recon , cube
 
 def grad_descent_solver(
     imager=None,
@@ -771,7 +771,9 @@ def scipy_solver_parallel(
     ):
 
     meas = imager.meas3dar.copy()
-    mask = imager.mask.copy()
+    mask = imager.mask
+    if mask is None:
+        mask = np.ones_like(meas[0])
     aa, bb = meas[0].shape
 
     int0 = meas[0].copy()

@@ -9,13 +9,14 @@ import eispac.core.fitting_functions as fit_fns
 from eispac.core.scale_guess import scale_guess
 from eispac.instr import calc_velocity
 from scipy.interpolate import interp1d
-from slitless.forward import Source
+from slitless.forward import Source, forward_op_tomo_3d
 import matplotlib.pyplot as plt
 from eispac.core.eiscube import EISCube
 import os, shutil, subprocess
 from slitless.data_loader import (BasicDataset, param_inv_transform,
     meas_inv_transform, meas_transform, param_transform)
 from torch.utils.data import DataLoader
+import glob
 
 WAVELENGTH = 195.119
 DISPERSION_SCALE = 22.275
@@ -75,6 +76,25 @@ def _worker_fit_chunk(args):
             out_perror[i, :] = out.perror
 
     return out_params, out_perror, out_status, out_chi2
+
+def meas_boundary_corrector(imgr, meas4dar, param4dar):
+    for i in range(param4dar.shape[0]):
+        Sr = Source(
+            param3d=param4dar[i],
+            pix=False
+        )
+
+        intenscale = Sr.param3d[0].max()
+        imgr.intenscale=intenscale
+        imgr.topix(Sr)
+
+        meas3dar = imgr.get_measurements(noise_model=None)
+        corrector = np.ones_like(meas3dar)
+        corrector[1:,:3] = meas3dar[1:,:3]/meas3dar[1:,[3]]
+        corrector[1:,-3:] = meas3dar[1:,-3:]/meas3dar[1:,[-4]]
+        meas4dar[i] *= corrector
+
+    return meas4dar
 
 def fit_spectra_joblib(data_cube, tmplt, n_jobs=48, component=0, fill_masked=True):
     """
@@ -478,50 +498,62 @@ def example_figurer(
     pathdir='/home/kamo/resources/slitless/data/eis_data/datasets/dset_v4/',
     fold='train'
 ):
-    dataset = BasicDataset(data_dir=pathdir+'data/', transform=meas_transform, 
-        target_transform=param_transform, fold=fold, dbsnr=None, 
-        noise_model=None, numdetectors=3)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=8)
-    meas_, param3d_ = next(iter(dataloader))
-    meas_ = meas_inv_transform(meas_)
-    param3d_ = param_inv_transform(param3d_)
-    savedir = pathdir + 'figs/'
+    files = glob.glob(os.path.join(pathdir, 'data', fold, 'data*.npy'))
+    np.random.shuffle(files)
+    
+    savedir = os.path.join(pathdir, 'smallset', fold, 'examples/')
     if not os.path.exists(savedir):
-        os.mkdir(savedir)
-    for i in range(len(meas_)):
-        fig, ax = quickplot6(meas_[i], param3d_[i])
+        os.makedirs(savedir, exist_ok=True)
+        
+    num_samples = min(32, len(files))
+    for i in range(num_samples):
+        data_i = np.load(files[i], allow_pickle=True).item()
+        
+        meas_ = np.stack([data_i['meas_0'], data_i['meas_-1'], data_i['meas_1']])
+        param3d_ = np.stack([data_i['int'], data_i['vel'], data_i['width']])
+        
+        fig, ax = quickplot6(meas_, param3d_)
         fig.savefig(savedir+f'data_{i:02}.png', dpi=300)
-        np.save(savedir+f'meas_{i:02}.npy', meas_[i])
-        np.save(savedir+f'params_{i:02}.npy', param3d_[i])
+        np.save(os.path.join(savedir, f'data_{i:02}.npy'), data_i)
         plt.close()
 
 def small_train_generator(
     inds, 
-    pathdir='/home/kamo/resources/slitless/data/eis_data/datasets/dset_v4/figs/train/',
+    pathdir='/home/kamo/resources/slitless/data/eis_data/datasets/dset_v4/smallset/train/',
 ):
-    meas_l, param3d_l = [], []
+    param3d_l, meas_l, meas2_l, cube_l = [], [], [], []
     for i in inds:
-        meas_l.append(np.load(pathdir+f'meas_{i:02}.npy'))
-        param3d_l.append(np.load(pathdir+f'params_{i:02}.npy'))
+        data_i = np.load(os.path.join(pathdir, 'examples', f'data_{i:02}.npy'), allow_pickle=True).item()
+        meas_l.append(np.stack([data_i['meas_0'], data_i['meas_-1'], data_i['meas_1'], data_i['meas_-2'], data_i['meas_2']]))
+        param3d_l.append(np.stack([data_i['int'], data_i['vel'], data_i['width']]))
+        cube_l.append(data_i['datacube'])
+        meas2_l.append(forward_op_tomo_3d(data_i['datacube'].transpose(2,0,1), orders=[0,-1,1,-2,2]))
     data = {
         'meas': np.array(meas_l),
-        'param3d': np.array(param3d_l)
+        'meas_damped': np.array(meas2_l),
+        'param3d': np.array(param3d_l),
+        'datacube': np.array(cube_l),
+        'example_inds': inds,
     }
-    np.save(pathdir+'eis_train_5_dsetv4.npy', data)
+    np.save(os.path.join(pathdir, 'eis_train_5_dsetv4.npy'), data)
 
-def small_val_generator(
+def small_test_generator(
     inds, 
-    pathdir='/home/kamo/resources/slitless/data/eis_data/datasets/dset_v4/figs/val/',
+    pathdir='/home/kamo/resources/slitless/data/eis_data/datasets/dset_v4/smallset/test/',
 ):
-    meas_l, param3d_l = [], []
+    param3d_l, meas_l, meas2_l = [], [], []
     for i in inds:
-        meas_l.append(np.load(pathdir+f'meas_{i:02}.npy'))
-        param3d_l.append(np.load(pathdir+f'params_{i:02}.npy'))
+        data_i = np.load(os.path.join(pathdir, 'examples', f'data_{i:02}.npy'), allow_pickle=True).item()
+        meas_l.append(np.stack([data_i['meas_0'], data_i['meas_-1'], data_i['meas_1'], data_i['meas_-2'], data_i['meas_2']]))
+        param3d_l.append(np.stack([data_i['int'], data_i['vel'], data_i['width']]))
+        meas2_l.append(forward_op_tomo_3d(data_i['datacube'].transpose(2,0,1), orders=[0,-1,1,-2,2]))
     data = {
         'meas': np.array(meas_l),
-        'param3d': np.array(param3d_l)
+        'meas_damped': np.array(meas2_l),
+        'param3d': np.array(param3d_l),
+        'example_inds': inds,
     }
-    np.save(pathdir+'eis_val_5_dsetv4.npy', data)
+    np.save(os.path.join(pathdir, 'eis_test_5_dsetv4.npy'), data)
     
 def download_eis(date_str, local_dir):
     """

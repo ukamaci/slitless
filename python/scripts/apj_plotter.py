@@ -65,22 +65,29 @@ def get_metric_comp_plots(save=False):
             fig.savefig(savepath+'SNR_{}_{}.png'.format(parameters[i],metrics[i][:4]), transparent=True, dpi=300)
 
 def get_recon_comp_figures_phy(save=False):
-    file = '/home/kamo/resources/slitless/python/results/recons/2024_08_22__20_39_21_smart_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
-    idx_im = 0
+    # file = '/home/kamo/resources/slitless/python/results/recons/2024_08_22__20_39_21_smart_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
+    file = '/home/kamo/resources/slitless/python/results/recons/2026_03_28__15_58_59_smart_eis_test_5_dsetv4_K_3_None_dbsnr_10/Rec.pickle'
+    idx_im = 4
     idx_n = 0
     Rec_mart = np.load(file, allow_pickle=True)
     rec_mart = Rec_mart.recons[idx_im].recon[idx_n]
+    Rec_mart.imager.intenscale=Rec_mart.sources[idx_im].param3d[0].max()
     rec_mart = Rec_mart.imager.frompix(rec_mart, width_unit='km/s', array=True)
-    file = '/home/kamo/resources/slitless/python/results/recons/2024_08_23__02_40_34_scipy_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
+    # file = '/home/kamo/resources/slitless/python/results/recons/2024_08_23__02_40_34_scipy_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
+    file = '/home/kamo/resources/slitless/python/results/recons/2026_03_28__15_59_46_scipy_solver_parallel_eis_test_5_dsetv4_K_3_None_dbsnr_10/Rec.pickle'
     Rec_map1d = np.load(file, allow_pickle=True)
     rec_map1d = Rec_map1d.recons[idx_im].recon[idx_n]
+    Rec_map1d.imager.intenscale=Rec_map1d.sources[idx_im].param3d[0].max()
     rec_map1d = Rec_map1d.imager.frompix(rec_map1d, width_unit='km/s', array=True)
-    file = '/home/kamo/resources/slitless/python/results/recons/2024_09_02__13_13_27_nn_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
+    # file = '/home/kamo/resources/slitless/python/results/recons/2024_09_02__13_13_27_nn_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
+    file = '/home/kamo/resources/slitless/python/results/recons/2026_04_28__23_05_46_nn_solver_eis_test_5_dsetv4_K_3_None_dbsnr_100/Rec.pickle'
     Rec_unet = np.load(file, allow_pickle=True)
     rec_unet = Rec_unet.recons[idx_im].recon[idx_n]
+    Rec_unet.imager.intenscale=Rec_unet.sources[idx_im].param3d[0].max()
     rec_unet = Rec_unet.imager.frompix(rec_unet, width_unit='km/s', array=True)
     true = Rec_unet.sources[idx_im].param3d
-    true = Rec_unet.imager.frompix(true, width_unit='km/s', array=True)
+    true[2] *= 3e5/Rec_unet.sources[idx_im].wavelength
+    # true = Rec_unet.imager.frompix(true, width_unit='km/s', array=True)
 
     recs = [true, rec_unet, rec_map1d, rec_mart]
     titles = ['True', 'U-Net', '1D MAP', 'MART']
@@ -294,8 +301,10 @@ def fig3(save=False):
 
     return recs_
 
-savepath = '/home/kamo/resources/slitless/python/scripts/basp25figs/'
+savepath = '/home/kamo/resources/slitless/figures/apj26_post_revision/'
 # recs = fig3(save=False)
 # get_metric_comp_plots(save=False)
-get_recon_comp_figures(save=False)
+# get_recon_comp_figures(save=False)
 get_recon_comp_figures_phy(save=True)
+
+
