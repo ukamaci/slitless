@@ -587,6 +587,107 @@ def smart(
     
     return recon , cube
 
+def smart2(
+        meas=None,
+        imager=None,
+        psi=0.2,
+        maxouter=5,
+        maxinner=20,
+        inf_prior_width=1.38,
+        fitter='pmf',
+        tmplt=None,
+        n_jobs=-1
+):
+    if imager is not None:
+        meas = imager.meas3dar.copy()
+    NK, M, N = meas.shape
+    L = 21
+
+    orders = imager.spectral_orders
+    inf = True if inf_prior_width is not None else False
+    orders_list = orders + ['inf'] if inf else orders
+
+    meas_list = [meas[k] for k in range(NK)]
+    if inf:
+        infprior = gauss_pix(np.outer(np.arange(L), np.ones(N)), L//2, inf_prior_width)
+        infprior = infprior / infprior.sum(axis=0) * meas[0].sum(axis=0)
+        meas_list.append(infprior)
+
+    num_projs = len(meas_list)
+
+    mtx_list = []
+    for order in orders_list:
+        mtx_list.append(tomomtx_gen((L, M), orders=[order]))
+
+    mtx_s_list = []
+    for k in range(num_projs):
+        mapped = mtx_list[k].T @ np.ones((mtx_list[k].shape[0], 1))
+        mtx_s_list.append((mapped < 0.01).flatten())
+
+    int0 = meas[0].copy()
+    vel0 = np.zeros_like(int0)
+    width0 = 1.38*np.ones_like(int0)
+    cube = datacube_generator(np.stack((int0,vel0,width0),axis=0), lamdim=L)
+    
+    k0 = np.array([0.25, 0.5, 0.25])
+    k1 = np.outer(k0,k0)
+    kernel = k0[None,None] * k1[:,:,None]
+
+    for i in range(maxouter):
+        print('Outer Iter: {}/{}'.format(i+1,maxouter))
+        cube = (cube + cube**(1+psi))*np.sum(cube)/np.sum(cube + cube**(1+psi))
+        cube = convolve(cube, kernel, mode='nearest')
+        for j in range(maxinner):
+            cube_flat = cube.reshape(L*M, N)
+            
+            meas2_list = []
+            for k in range(num_projs):
+                meas2_list.append(mtx_list[k] @ cube_flat)
+                
+            chi_list = []
+            for k in range(num_projs):
+                chi_list.append(np.mean(((meas_list[k]-meas2_list[k])**2)/(meas_list[k]+1e-7)))
+            chi = np.array(chi_list)
+            unconverged = chi > 1e-10
+            if np.sum(unconverged) == 0:
+                continue
+            
+            Cor_list = []
+            active_count = np.zeros((L, M, N))
+            for k in range(num_projs):
+                cor_k = (meas_list[k]/(meas2_list[k]+1e-5))**(2/3)
+                Cor_k_flat = mtx_list[k].T @ cor_k
+                Cor_k_flat[mtx_s_list[k], :] = 1.0
+                Cor_list.append(Cor_k_flat.reshape(L, M, N))
+                if unconverged[k]:
+                    active_mask = (1.0 - mtx_s_list[k].astype(float)).reshape(L, M, 1)
+                    active_count += active_mask
+            
+            Cor = np.stack(Cor_list, axis=0)
+            Corr = np.prod(Cor[unconverged], axis=0) ** (1.0 / np.maximum(active_count, 1.0))
+            cube *= Corr
+        print(f'chi:{np.mean(chi)}')
+    
+    if fitter=='mpfit':
+        if tmplt is None:
+            template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
+            tmplt = eispac.read_template(template_filepath)
+        lamdim = cube.shape[0]
+        # Construct the wavelength grid assuming pixel units center around lamdim//2
+        wave = imager.srpix.wavelength + (imager.dispersion_scale / 1000) * (np.arange(lamdim) - lamdim // 2)
+        cube = cube / (imager.dispersion_scale / 1000) * imager.intenscale
+        
+        recon = smart_fit_spectra_joblib(cube, tmplt, wave=wave, n_jobs=n_jobs)
+        
+        # convert physical units (km/s, Angstroms) back to pixel units to match original format
+        recon[0] /= imager.intenscale
+        recon[1] = recon[1] * (imager.srpix.wavelength / 300 / imager.dispersion_scale)
+        recon[2] = recon[2] / (imager.dispersion_scale / 1000)
+    elif fitter=='pmf':
+        recon = gauss_pmf_fitter(cube)
+
+    return recon , cube
+
 def grad_descent_solver(
     imager=None,
     truth=None,
