@@ -1,0 +1,1446 @@
+%% Beginning of file 'sample7.tex'
+%%
+%% Version 7. Created January 2025.  
+%%
+%% AASTeX v7 calls the following external packages:
+%% times, hyperref, ifthen, hyphens, longtable, xcolor, 
+%% bookmarks, array, rotating, ulem, and lineno 
+%%
+%% RevTeX is no longer used in AASTeX v7.
+%%
+\documentclass[linenumbers,twocolumn]{aastex7}
+
+\usepackage{savesym}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{bm}
+\savesymbol{tablenum}
+\usepackage{siunitx}
+\restoresymbol{SIX}{tablenum}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{multirow}
+\usepackage{tikz}
+
+\lstset{%
+basicstyle=\ttfamily,
+breaklines = false,
+}
+
+\sisetup{range-phrase=\,--\,} 
+\sisetup{range-units=single} 
+\DeclareSIUnit\erg{erg}
+\DeclareSIUnit\pixel{pixel}
+%%
+%% This initial command takes arguments that can be used to easily modify 
+%% the output of the compiled manuscript. Any combination of arguments can be 
+%% invoked like this:
+%%
+%% \documentclass[argument1,argument2,argument3,...]{aastex7}
+%%
+%% Six of the arguments are typestting options. They are:
+%%
+%%  twocolumn   : two text columns, 10 point font, single spaced article.
+%%                This is the most compact and represent the final published
+%%                derived PDF copy of the accepted manuscript from the publisher
+%%  default     : one text column, 10 point font, single spaced (default).
+%%  manuscript  : one text column, 12 point font, double spaced article.
+%%  preprint    : one text column, 12 point font, single spaced article.  
+%%  preprint2   : two text columns, 12 point font, single spaced article.
+%%  modern      : a stylish, single text column, 12 point font, article with
+%% 		  wider left and right margins. This uses the Daniel
+%% 		  Foreman-Mackey and David Hogg design.
+%%
+%% Note that you can submit to the AAS Journals in any of these 6 styles.
+%%
+%% There are other optional arguments one can invoke to allow other stylistic
+%% actions. The available options are:
+%%
+%%   astrosymb    : Loads Astrosymb font and define \astrocommands. 
+%%   tighten      : Makes baselineskip slightly smaller, only works with 
+%%                  the twocolumn substyle.
+%%   times        : uses times font instead of the default.
+%%   linenumbers  : turn on linenumbering. Note this is mandatory for AAS
+%%                  Journal submissions and revisions.
+%%   trackchanges : Shows added text in bold.
+%%   longauthor   : Do not use the more compressed footnote style (default) for 
+%%                  the author/collaboration/affiliations. Instead print all
+%%                  affiliation information after each name. Creates a much 
+%%                  longer author list but may be desirable for short 
+%%                  author papers.
+%% twocolappendix : make 2 column appendix.
+%%   anonymous    : Do not show the authors, affiliations, acknowledgments,
+%%                  and author contributions for dual anonymous review.
+%%  resetfootnote : Reset footnotes to 1 in the body of the manuscript.
+%%                  Useful when there are a lot of authors and affiliations
+%%		    in the front matter.
+%%   longbib      : Print article titles in the references. This option
+%% 		    is mandatory for PSJ manuscripts.
+%%
+%% Since v6, AASTeX has included \hyperref support. While we have built in 
+%% specific %% defaults into the classfile you can manually override them 
+%% with the \hypersetup command. For example,
+%%
+%% \hypersetup{linkcolor=red,citecolor=green,filecolor=cyan,urlcolor=magenta}
+%%
+%% will change the color of the internal links to red, the links to the
+%% bibliography to green, the file links to cyan, and the external links to
+%% magenta. Additional information on \hyperref options can be found here:
+%% https://www.tug.org/applications/hyperref/manual.html#x1-40003
+%%
+%% The "bookmarks" has been changed to "true" in hyperref
+%% to improve the accessibility of the compiled pdf file.
+%%
+%% If you want to create your own macros, you can do so
+%% using \newcommand. Your macros should appear before
+%% the \begin{document} command.
+%%
+\newcommand{\vdag}{(v)^\dagger}
+\newcommand\aastex{AAS\TeX}
+\newcommand\latex{La\TeX}
+\DeclareMathOperator\erf{erf}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% The following section outlines numerous optional output that
+%% can be displayed in the front matter or as running meta-data.
+%%
+%% Running header information. A short title on odd pages and 
+%% short author list on even pages. Note that this
+%% information may be modified in production.
+%%\shorttitle{AASTeX v7 Sample article}
+%%\shortauthors{The Terra Mater collaboration}
+%%
+%% Include dates for submitted, revised, and accepted.
+%%\received{February 1, 2025}
+%%\revised{March 1, 2025}
+%%\accepted{\today}
+%%
+%% Indicate AAS Journal the manuscript was submitted to.
+% \submitjournal{APJ}
+%% Note that this command adds "Submitted to " the argument.
+%%
+%% You can add a light gray and diagonal water-mark to the first page 
+%% with this command:
+% \watermark{text}
+%% where "text", e.g. DRAFT, is the text to appear.  If the text is 
+%% long you can control the water-mark size with:
+%% \setwatermarkfontsize{dimension}
+%% where dimension is any recognized LaTeX dimension, e.g. pt, in, etc.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Use this command to indicate a subdirectory where figures are located.
+%%\graphicspath{{./}{figures/}}
+%% This is the end of the preamble.  Indicate the beginning of the
+%% manuscript itself with \begin{document}.
+
+% \graphicspath{{./}{figures/}}
+
+\begin{document}
+
+\title{Solar Slitless Spectroscopy with Learned Reconstruction}
+
+%% A significant change from AASTeX v6+ is in the author blocks. Now an email
+%% address is required for each author. This means that each author requires
+%% at least one of the following:
+%%
+%% \author
+%% \affiliation
+%% \email
+%%
+%% If these three commands are not available for each author, the latex
+%% compiler will issue an error and if you force the latex compiler to continue,
+%% it will generate an incomplete pdf.
+%%
+%% Multiple \affiliation commands are allowed and authors can also include
+%% an optional \altaffiliation to indicate a status, i.e. Hubble Fellow. 
+%% while affiliations are indexed as footnotes, altaffiliations are noted with
+%% with a non-numeric footnote that is set away from the numeric \affiliation 
+%% footnotes. NOTE that if an \altaffiliation command is used it must 
+%% come BEFORE the \affiliation call, right after the \author command, in 
+%% order to place the footnotes in the proper location. Because non-numeric
+%% symbols are used, \altaffiliation should be used sparingly.
+%%
+%% In v7 the \author command takes an optional argument which provides 
+%% additional metadata about the author. Authors can provide the 16 digit 
+%% ORCID, the surname (family or last) name, the given (first or fore-) name, 
+%% and a name suffix, e.g. "Jr.". The syntax is:
+%%
+%% \author[orcid=0000-0002-9072-1121,gname=Gregory,sname=Schwarz]{Greg Schwarz}
+%%
+%% This name metadata in not shown, it is only for parsing by the peer review
+%% system so authors can be more easily identified. This name information will
+%% also be sent to the publisher so they can include it in the CROSSREF 
+%% metadata. Including an orcid will hyperlink the author name to the 
+%% author's ORCID page. Note that  during compilation, LaTeX will do some 
+%% limited checking of the format of the ID to make sure it is valid. If 
+%% the "orcid-ID.png" image file is  present or in the LaTeX pathway, the 
+%% ORCID icon will appear next to the authors name.
+%%
+%% Even though emails are now required for each author, the \email does not
+%% produce output in the compiled manuscript unless the optional "show" command
+%% is used. For example,
+%%
+%% \email[show]{greg.schwarz@aas.org}
+%%
+%% All "shown" emails are show in the bottom left of the first page. Due to
+%% space constraints, only a few emails should be shown. 
+%%
+%% To identify a corresponding author, use the \correspondingauthor command.
+%% The command appends "Corresponding Author: " to the argument it appears at
+%% the bottom left of the first page like the output from \email. 
+
+
+\author[orcid=0009-0009-4606-6842, gname='Ulas', sname='Kamaci']{Ulas Kamaci}
+\affiliation{ University of Illinois Urbana-Champaign \\
+Department of Electrical and Computer Engineering, and Coordinated Science Laboratory \\
+Urbana, IL 61801, USA
+}
+\email{ukamaci2@illinois.edu}
+
+\author{Farzad Kamalabadi}
+\affiliation{ University of Illinois Urbana-Champaign \\
+Department of Electrical and Computer Engineering, and Coordinated Science Laboratory \\
+Urbana, IL 61801, USA
+}
+\email{farzadk@illinois.edu}
+
+
+% \author[orcid=0000-0000-0000-0001,sname='North America']{Tundra North America}
+% \altaffiliation{Kitt Peak National Observatory}
+% \affiliation{University of Saskatchewan}
+% \email[show]{fakeemail1@google.com}  
+
+% \author[orcid=0000-0000-0000-0002,gname=Bosque, sname='Sur America']{Forrest Sur Am\'{e}rica} 
+% \altaffiliation{Las Campanas Observatory}
+% \affiliation{Universidad de Chile, Department of Astronomy}
+% \email{fakeemail2@google.com}
+
+% \author[gname=Savannah,sname=Africa]{S. Africa}
+% \affiliation{South African Astronomical Observatory}
+% \affiliation{University of Cape Town, Department of Astronomy}
+% \email{fakeemail3@google.com}
+
+% \author{River Europe}
+% \affiliation{University of Heidelberg}
+% \email{fakeemail4@google.com}
+
+% \author[0000-0000-0000-0003,sname=Asia,gname=Mountain]{Asia Mountain}
+% \altaffiliation{Astrosat Post-Doctoral Fellow}
+% \affiliation{Tata Institute of Fundamental Research, Department of Astronomy}
+% \email{fakeemail5@google.com}
+
+% \author[0000-0000-0000-0004]{Coral Australia}
+% \affiliation{James Cook University, Department of Physics}
+% \email{fakeemail6@google.com}
+
+% \author[gname=IceSheet]{Penguin Antarctica}
+% \affiliation{Amundsen–Scott South Pole Station}
+% \email{fakeemail7@google.com}
+
+% \collaboration{all}{The Terra Mater collaboration}
+
+%% Use the \collaboration command to identify collaborations. This command
+%% takes an optional argument that is either a number or the word "all"
+%% which tells the compiler how many of the authors above the command to
+%% show. For example "\collaboration[all]{(DELVE Collaboration)}" wil include
+%% all the authors above this command.
+%%
+%% Mark off the abstract in the ``abstract'' environment. 
+\begin{abstract}
+\noindent
+Although solar imaging spectroscopy has been widely used to study the Sun, the
+inherent rastering process in conventional slit spectrographs required to generate 
+spatial-spectral images limits their capability for studying dynamic events. In 
+contrast, slitless imaging spectrographs can enable cotemporal imaging
+and spectroscopy by removing the slit and the rastering process, at the expense 
+of producing overlapped spectra on the observations, implying the necessity for
+the solution of the resulting inverse problem. In this work, we develop a deep
+learning approach to solve the challenging problem of disentangling the
+overlapped spectra for a slitless spectrograph design with a narrow
+bandpass in extreme ultraviolet (EUV) and detectors placed at multiple orders.
+The bandpass of the instrument is assumed to have \textbf{a single dominant
+spectral line, and our method estimates the best Gaussian fit} from the
+multi-order observations. The approach is to train a convolutional neural
+network (CNN) as a mapping from the spectrograph observations to the Gaussian
+spectral line parameters using a large data set derived from Hinode/EIS
+observations. The CNN is trained in a supervised way from matched input-output
+pairs.  We demonstrate the performance of the proposed method by comparing it to
+a widely used tomographic reconstruction approach, MART, and a recently proposed
+parametric inversion approach.  Experiments on various observational settings
+show that the proposed method achieves superior reconstruction quality than the
+existing approaches with the added benefit of much faster reconstruction.
+
+\end{abstract}
+
+%% Keywords should appear after the \end{abstract} command. 
+%% The AAS Journals now uses Unified Astronomy Thesaurus (UAT) concepts:
+%% https://astrothesaurus.org
+%% You will be asked to selected these concepts during the submission process
+%% but this old "keyword" functionality is maintained in case authors want
+%% to include these concepts in their preprints.
+%%
+%% You can use the \uat command to link your UAT concepts back its source.
+\keywords{\uat{Ultraviolet spectroscopy}{2284} --- \uat{Solar corona}{1483} ---
+\uat{Convolutional neural networks}{1938} --- \uat{Nonlinear regression}{1948} ---
+}
+
+% \keywords{methods: statistical -- Sun: corona -- Sun: UV radiation --
+% techniques: image processing -- techniques: neural networks --techniques:
+% imaging spectroscopy}
+
+%% From the front matter, we move on to the body of the paper.
+%% Sections are demarcated by \section and \subsection, respectively.
+%% Observe the use of the LaTeX \label
+%% command after the \subsection to give a symbolic KEY to the
+%% subsection for cross-referencing in a \ref command.
+%% You can use LaTeX's \ref and \label commands to keep track of
+%% cross-references to sections, equations, tables, and figures.
+%% That way, if you change the order of any elements, LaTeX will
+%% automatically renumber them.
+
+\section{Introduction} \label{sec:intro}
+
+Solar imaging spectroscopy is a fundamental technique to study the solar
+corona, which provides spatial and spectral information of a two-dimensional 
+field of view. It allows for inferring key physical parameters of the plasma 
+such as the velocity, temperature, and density. The study of these parameters
+sheds light on the complex dynamic behavior of solar plasma
+\citep{phillips2012ultraviolet, rybicki2008radiative}. 
+
+
+% \textit{Examples, applications (what is it used for - Doppler 
+% shift, temperature, plasma density \dots)}
+
+% Scientific Goal:
+% \begin{itemize}
+%   \item ESIS is designed to reveal the structure and dynamics of small-scale transient
+%   events that are prevalent at transition region temperatures
+% \end{itemize}
+
+% Due to the inherent limitation of two-dimensional detectors to capture the 
+% three-dimensional spatial-spectral data cube, traditional imaging spectrographs
+% require a scanning process where a two-dimensional slice of the data cube is
+% captured at each exposure. While filtergraph type spectrographs scan the cube in
+% the wavelength dimension by swapping bandpass filters, dispersing slit
+% spectrographs disperse light coming from a thin stripe of the field of view
+% through the slit, which is then scanned spatially to build up the cube.
+% % \textit{Define filtergraph-type vs dispersing slit spectrograph
+% % with 1 sentence each.}
+
+Traditional imaging spectrographs rely on a scanning process to construct the
+three-dimensional spatial-spectral data cube. Two main classes of such
+spectrographs are filtergraph type and dispersing slit type, where the former
+scans the cube in the wavelength dimension by swapping bandpass filters at each
+exposure, and the latter by dispersing light coming from a thin stripe of the
+field of view through the slit, which is then scanned spatially to construct the
+cube.
+
+The main drawback of the filtergraph type spectrographs is the low spectral 
+resolution they can provide which limits their ability to infer the density,
+temperature and velocity accurately. Dispersing slit spectrographs on the other
+hand suffer from large scanning time ($\sim 10$ minutes) which renders them
+unsuitable for imaging dynamic events such as solar flares, coronal mass
+ejections, and transient brightening which evolve on the orders of seconds
+\citep{kankelborg2001simultaneous}.
+
+% \item Scanning based spectrographs are not suitable for imaging dynamic events
+% \textit{(give numbers, typical scanning time vs solar feature evolution time)(citation).}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.47\textwidth]{slitli.png} 
+\hspace{0.05 in} 
+% \vline 
+\begin{tikzpicture}
+    \draw[dashed] (0,0) -- (0,3.5);
+\end{tikzpicture}
+\hspace{0.00 in}
+\includegraphics[width=0.47\textwidth]{slitless.png}
+\caption{Illustration of measurements in slit and slitless spectrographs. The
+left panel shows a slit spectrograph, which requires scanning the slit across the
+field of view (FOV). The right panel depicts a slitless spectrograph, where
+multiple detectors are positioned at diffraction orders -1, 0, 1 to increase
+measurement diversity. In the slitless configuration, the absence of a slit
+causes spectral overlap along the spatial dimension parallel to the dispersion
+direction.}
+\label{fig:slitless}
+\end{figure*}
+
+Slitless spectrographs are modifications of slit spectrographs where the slit is
+completely removed to capture \textit{cotemporal} spatial and spectral
+information of a scene with a large field of view, making them suitable for
+studying dynamic events. However, their measurements are difficult to interpret
+and analyze for extended sources like the Sun due to the overlapping spectrum of
+the neighboring pixels on the detector in the dispersion direction (see Figure
+\ref{fig:slitless} for illustration). Therefore, their measurements, also called
+\textit{overlapograms}, need to be inverted to reveal the spectrum at each
+spatial position in the field of view of the instrument. 
+
+\textbf{Slitless spectrographs can take measurements at multiple diffraction orders, 
+where each order mathematically corresponds to a projection} of the
+three-dimensional spatial-spectral data cube $r(x,y,\lambda)$ on the
+two-dimensional detector.  Therefore, they fall in the category of computed
+tomography imaging spectrographs (CTIS) \citep{okamoto1991simultaneous,
+descour1995computed} which are non-scanning spectrographs that take
+multiple simultaneous projections of the data cube. CTIS systems are inherently
+limited-angle tomography systems because they rely on a limited set of
+spectrally dispersed projections, determined by the disperser design and the
+size of the focal plane array, which affect the accuracy of the spectral
+reconstruction.
+
+The number of projections in CTIS systems play an important role in the fidelity
+of reconstructions. Early slitless spectrographs such as the S082A instrument on
+Skylab \citep{tousey1977extreme} and the Res-K instrument of the KRONOS-I mission
+\citep{zhitnik1998spectral} routinely captured only a single projection of the
+data cube which made it impossible to invert their data and limited the
+analysis. Two projections already enable the estimation of Doppler shifts by
+analyzing the difference image between them \citep{mariska1992solar,
+courrier2018using}. The Multi-Order Solar Extreme ultraviolet
+Spectrograph (MOSES) \citep{fox2011snapshot} captures three projections at the
+diffraction orders -1,0,1 which enables full inversions to reconstruct the
+data cube \citep{fox2003data}. The more recent EUV Snapshot Imaging Spectrograph
+(ESIS) \citep{parker2022first} captures four unique projections of the data cube
+for more accurate estimations of the spectral line parameters.
+
+% The S082A
+% instrument on Skylab \cite{tousey1977extreme} and the Res-K instrument of the
+% KRONOS-I mission \cite{zhitnik1998spectral} were the only two satellite missions
+% that routinely captured solar slitless spectrograph data. Since then, there has
+% been more slitless spectrograph missions being proposed and developed including
+% the Multi-Order Solar Extreme ultraviolet Spectrograph (MOSES)
+% (\cite{fox2011snapshot}) COronal Spectroscopic Imager in the EUV (COSIE)
+% (\cite{winebarger2019unfolding}) and the EUV Snapshot Imaging Spectrograph
+% (ESIS) (\cite{parker2022first}) as well as the multi-slit approach the Multi
+% Slit Solar Explorer (MUSE) (\cite{de2019multi}). 
+
+% Slitless spectrograph measurements mathematically correspond to a tomographic
+% projection of the three-dimensional spatial-spectral data cube $r(x,y,\lambda)$
+% on the two-dimensional detector. Early slitless spectrographs such as the S082A
+% observed only one projection, which limited their ability to estimate the
+% spectral line parameters except for very compact sources. Slitless spectrographs
+% with two projections are able to estimate the Doppler shifts
+% (\cite{courrier2018using}), and invert temperature and density information
+% (\cite{winebarger2019unfolding}). As with any tomographic inversion problem,
+% adding more projections significantly increases the fidelity of the
+% reconstructions. The MOSES instrument
+% (\cite{kankelborg2001simultaneous,fox2003data}) operates in a narrowband and
+% employs three detectors at the diffraction orders -1,0,+1 to enable full
+% inversions to disentangle the overlapped spectra in the measurements. The recent 
+% ESIS instrument is a more advanced design than MOSES with four unique
+% projections.
+
+% A nonscanning spectrograph that takes multiple simultaneous projections of the
+% data cube is called a computed tomography imaging spectrograph (CTIS)
+% (\cite{descour1995computed}). Because of the limited size of the focal plane
+% array, CTIS instruments are limited-angle tomographic systems. The tomographic 
+% reconstruction problem they need to solve is ill-posed due to the limited view 
+% angles they can collect which leads to an under-determined problem with a 
+% non-trivial null space referred to as the \textit{missing cone}
+% (\cite{descour1995computed}). As the under-determined problems have infinitely 
+% many solutions, incorporating prior knowledge of the object plays a critical 
+% role in constraining the solution space to physically feasible ones.
+
+% Slitless imaging spectrographs have been widely used in astronomical
+% imaging to analyze compact sources such as galaxies and stars and are still
+% being used today on the Hubble and the James Webb space telescopes
+% (\cite{ruiz2005probing, willott2022near}). However, when it comes to extended
+% sources, interpretation and analysis of the slitless spectrograph data becomes
+% challenging because of the overlapping spectra in the measurements.
+
+Due to the limitations in the detector area and the feasible number of
+projections that can be captured simultaneously, the tomographic reconstruction
+problem that the solar slitless spectrographs need to solve is an
+under-determined and ill-posed inverse problem. Therefore, the prior knowledge
+and the constraints that are incorporated in the reconstruction algorithm play a
+crucial role in the fidelity of reconstructions.
+Various inversion methods have been applied to the CTIS systems operating at
+different wavelength regimes. For solar applications, most algorithmic 
+contributions came from inverting the MOSES observations. \citet{fox2003data} have
+compared the performance of Fourier back-projection, multiplicative algebraic
+reconstruction technique (MART), and the Pixon technique for inversion. Although
+MART has been reported to perform the best among those methods, all of them
+suffer from over-smoothing of the line profiles in the reconstructions, and
+underestimation of the velocities \citep{fox2011snapshot}. Furthermore, the
+MART reconstruction results presented in \citet{fox2003data} and
+\citet{fox2011snapshot} for simulated MOSES data are optimistic since they assume
+an additional projection of the actual cube is available as a prior which is in
+reality unknown.
+
+MART was first implemented on a CTIS system by \citet{okamoto1991simultaneous}
+and is still the preferred inversion technique for the recent ESIS mission
+\citep{parker2022first}. It is favored for being a simple and a fast 
+technique which can also incorporate non-negativity constraints and smoothness
+priors. However, MART has two significant drawbacks: first, it suffers from
+over-smoothing of the line profiles in the reconstructions, and underestimation
+of the velocities \citep{fox2011snapshot} due to the inverse problem being 
+highly under-determined; second, it is difficult to integrate more powerful
+priors to improve the solutions.
+
+To address the limitations of MART, \citet{oktem2014parametric} and
+\citet{davila2019slitless} proposed a parametric inversion approach where they 
+exploit the fact that the EUV spectra of emission lines can be parameterized by
+Gaussians \citep{rybicki2008radiative, ireland2005precision}. This
+representation automatically constrains the shape of the reconstructed profiles
+to Gaussians, dramatically decreasing the number of unknowns in the data cube.
+Although the mentioned approach is promising, their proposed iterative
+inversion technique has two drawbacks. First, they set up the three-dimensional
+tomographic inversion as a set of two-dimensional problems that are solved
+independently, which restricts them to use only one dimensional spatial priors.
+Second, they only use simple smoothness penalties as spatial priors in their
+inversion. Therefore, there is need for a more powerful parametric inversion
+technique which can incorporate better suited priors for solar scenes
+\citep{davila2019slitless}.
+
+Choosing the best suited prior or regularization is a fundamental pursuit in
+ill-posed computational imaging problems literature. Initially, simple priors like
+smoothness or sparsity were employed to constrain solutions, relying heavily on
+assumptions about the underlying structure of the images. The advent of machine
+learning, particularly deep learning, has revolutionized this field by enabling
+the use of data-driven priors learned from large datasets. These approaches can
+capture complex patterns and structures in images, leading to substantial
+improvements in the accuracy and robustness of solutions to inverse problems
+\citep{goodfellow2016deep, jin2017deep, ongie2020deep}.
+
+
+% While enforcing smoothness prevents overfitting to noise, it
+% oversmoothes the reconstructions and looses the details in the image. With the 
+% advent of compressed sensing, sparsity based priors have been proven to be
+% useful in ill-posed inverse problems. More recently, deep learning techniques 
+% surpassed the performance of sparsity based methods thanks to their ability to 
+% extract relevant features and learn implicit priors effectively from training 
+% data.
+
+% A deep neural network (DNN) is a universal function approximator
+% (\cite{hornik1989multilayer}) that takes an input and applies a set of linear 
+% and nonlinear transformations through its multiple layers between its input and
+% output. They can model complex nonlinear relations between the input and output
+% space. There are various ways to utilize DNNs to solve inverse problems
+% \cite{ongie2020deep}. If the imaging forward model $\bm {\mathcal A}$ is known,
+% i.e. $\bm y = \bm {\mathcal A} (\bm x)$, a straightforward way to utilize a DNN
+% is to use it as a reconstruction network $f_{\theta}(\cdot)$ that takes as
+% input the measurement $\bm y$ and outputs the reconstruction $\hat {\bm x}$ such
+% that $\hat{\bm x} = f_{\theta}(\bm y)$. The training can be done in a supervised 
+% manner with a simulated dataset of matched input output pairs $(\bm x, \bm y)$.
+
+% \begin{itemize}
+% \item \textit{The use of deep learning in similar imaging problems (possibly
+% nonlinear). Cite some BASP work on astronomy (e.g. gravitational lensing,
+% black hole imaging).}
+% \end{itemize}
+% Deep learning 
+
+\textbf{In this paper we combine the parametric inversion idea proposed by
+\citet{davila2019slitless} with a deep learning approach to solve the slitless
+reconstruction problem.} The approach is based on supervised training of a
+convolutional neural network (CNN) with a large dataset derived from Hinode/EIS
+measurements. The network takes as input the spectrograph measurements, and
+returns the spectral line parameters for every pixel in the field of view.
+% There are several advantages of this approach over the previous approaches.
+% Supervised training allows the CNN to learn the nonlinear inverse mapping from
+% the spectrograph measurements to the Gaussian parameters. The learned mapping is
+% inherently regularized by the training dataset which consists of actual spectral
+% measurements. Hence, the network is able to capture the statistical and
+% structural information in the training set to produce feasible solutions from
+% limited measurements. 
+Reconstruction results demonstrate the superiority of this learning based
+approach compared to the classical tomographic reconstruction approach MART \textbf{\citep[as 
+implemented by][]{parker2022first}} and the parametric inversion approach by
+\citet{davila2019slitless}. Typical reconstruction time is also less than a
+second once training is done, which is orders of magnitude less than the
+alternative reconstruction methods.
+
+This work lays the foundation of data-driven inversion for slitless spectrograph
+instruments and pushes the limits of their computational capabilities to the
+state-of-the-art. The significant accuracy improvement will support more
+conclusive studies about the structure and the dynamics of the solar corona and 
+related transient phenomena.
+
+The organization of the paper is as follows. Section \ref{sec:par_fwd_mod} describes the parametric 
+forward model characterizing the connection between the measurements and the data
+cube. Section \ref{sec:learned_recon} describes the proposed learning based framework. Section \ref{sec:num_res} 
+presents experiments and numerical results. 
+
+
+% \section{Slitless Imaging Spectroscopy} \label{sec:slitless_spec}
+
+% % By the end of this section, you will learn how the slitless spectrograph 
+% % measurements are related to the input spectral cube. You will appreciate the 
+% % ill-posedness of the inverse problem, and understand the motivation behind the 
+% % parametric modeling.
+
+% \begin{itemize}
+% \item First example, Russian Skylab, single dispersion - full FOV, hard to analyze
+% \item MOSES - First multi-order slitless design to enable spectral deconvolution
+% \item Explosion of recent missions: EUNIS, MUSE, COSIE, SERTS, ESIS
+% \item CTIS systems in visible spectrum for non-space applications
+% \end{itemize}
+
+
+% \begin{figure}[h!]
+% \centering
+% \includegraphics[width=0.45\textwidth]{moses_ab.png}
+% \caption{Illustration of a slitless imaging spectrograph with -1, 0, 1 
+% orders producing measurements of a bichromatic source.}
+% \label{fig:moses_ab}
+% \end{figure}
+
+\section{Forward Model} \label{sec:par_fwd_mod}
+We consider a multi-order slitless spectrograph model similar to MOSES
+\citep{kankelborg2001simultaneous} where multiple detectors capture independent
+projections at different diffraction orders simultaneously. Let $a \in
+\{0,-1,1,-2,2,\dots\}$ denote the diffraction order. We consider $K$ detectors
+placed at the distinct diffraction orders $a_1, a_2, \dots, a_K$.  Let
+$r(x,y,\lambda)$ represent the diffraction-limited spatial-spectral data cube,
+and $y^{(a)} (x',y')$ the projection of the data cube incident on the detector
+at the diffraction order $a$.  For convenience, all the spatial coordinates
+$(x,y,x',y')$ and the spectral coordinate $\lambda$ are expressed at the
+detector plane in units of the detector pixel size.  The relation between the
+data cube and the detector measurements can then be expressed as line integrals
+similar to parallel beam tomography of an optically thin object.  Assuming that
+the dispersion direction is parallel to the $y$ axis, the \textbf{projection
+angle $\theta$ lies on the $(y,\lambda)$ plane} and is determined by the
+diffraction order $a$ according to $\theta = \tan^{-1}(a)$.  The governing
+integral equation for our slitless spectrograph can be written as
+\citep{kankelborg2001simultaneous}:
+\begin{align}
+    % y^{(a)}_{ij} & = \sum_k r_{i(j+ak)k} \\
+    y^{(a)}(x',y') & = \int_{\lambda_0-\delta}^{\lambda_0+\delta} r(x', y' -
+    a\lambda+a\lambda_0,\lambda) \ d\lambda 
+\label{eq:fwd_cont}
+\end{align}
+where the integration paths are parameterized by $\lambda$ with a slope of $-a$ 
+in the $(y,\lambda)$ plane, and are contained within the bandpass of the
+instrument which has a width of $2 \delta$ centered around the rest wavelength
+$\lambda_0$. \textbf{Note that the linear model in Eq. \eqref{eq:fwd_cont} 
+assumes that the detector is not saturated.}
+
+To express the discrete version of the model in Eq. \eqref{eq:fwd_cont}, let us
+define the discrete versions of the data cube $r_{ijk} \in \mathbb R^{M \times M
+\times P}$ and the measurements $y^{(a)}_{ij} \in \mathbb R^{M \times M}$
+where $(i,j) \in \{1,\dots,M\}$ are spatial indices and $k \in \{1,\dots,P\}$ is
+the spectral index. Each detector has $M \times M$ pixels, and the data cube is 
+discretized with the same spatial resolution as the detector, leading to the
+same size of $M \times M$ in the spatial coordinates. Typically, $P \ll M$ due 
+to the narrow bandpass of the instrument. With this, the discrete forward model 
+can be written as the weighted sum of the data cube voxels:
+\begin{align}
+    y^{(a)}_{i'j'} & = \sum_{j} \sum_{k} \beta^{(a)}(j, k;i', j') r_{i'jk}
+\label{eq:fwd_sum}
+\end{align}
+where $\beta^{(a)}(j, k;i', j')$ represents the weight for the contribution of the
+voxel at the position $(j,k)$ to the detector pixel at $(i',j')$ for the
+diffraction order $a$.
+We can express this linear model as a single matrix vector product by defining 
+the measurement vector $\bm y \in \mathbb R^{KM^2}$ consisting of all detector 
+pixels concatenated, and the data cube vector $\bm r \in \mathbb R^{PM^2}$ as:
+\begin{equation}
+    \bm y = \bm H \bm r
+\end{equation}
+where $\bm H \in \mathbb R^{KM^2 \times PM^2}$ is the forward matrix 
+which is the undersampled version of the Radon transform matrix due to the
+limited angle coverage of the projections.
+
+To account for the detector noise, we add a Poisson noise generator process
+$\mathcal P_\gamma(\cdot)$ to the forward model with a signal-to-noise
+ratio (SNR) of $\gamma = \sqrt{N_{\text{avg}}}$ where $N_{\text{avg}}$
+corresponds to the average number of photon counts per pixel for each detector.
+
+% which is defined as the SNR corresponding to the average 
+% number of counts ($\gamma = \sqrt{N_{\text{avg}}}$) per pixel per detector.
+
+% , which is affected by many factors such as the scene
+% brightness, instrument sensitivity, and exposure time. Since SNR changes with 
+% photon count, we define the SNR per each detector 
+% SNR also changes with
+% position on the detector since the scene brightness changes. For each detector,
+% we define $\gamma$ to be the SNR value corresponding to the pixel with the $90\%$
+% of the maximum pixel value in that detector, providing a representative estimate
+% of high signal regions while excluding extreme outliers. 
+
+The forward model with the noise included becomes: 
+\begin{equation}
+    \bm y = \mathcal{P}_\gamma(\bm H \bm r)
+\end{equation}
+% \subsection{Gaussian Parametrization}
+% With the Gaussian line assumption, the spectrum at each spatial position $(i,j)$
+% is parametrized by the intensity, Doppler shift, and the line width denoted by
+% $(f_{ij}, \epsilon_{ij}, \Delta_{ij})$ respectively. With that, each voxel of
+% the cube $r_{ijk}$ is a sample of a Gaussian:
+% \begin{equation}
+% r_{ijk} 
+% %& = f_{ij}\mathcal G(\mu=\epsilon_{ij}+M/2, \sigma=\Delta_{ij})[k] \\
+% = \frac{f_{ij}}{\Delta_{ij}\sqrt{2\pi}}
+% e^{-\frac{(k-M/2-\epsilon_{ij})^2}{2\Delta_{ij}^2}} % \quad \quad i,j,k \in \{1,\dots,M\}
+% \end{equation}
+% The rest wavelength of the emission line is assumed to be at the center of the
+% wavelength axis, causing the $M/2$ shift in the mean. Let $\bm f,\bm \epsilon,
+% \bm \Delta \in \mathbb R^{M^2}$ be the vectorized versions of these parameters 
+% for the entire $M \times M$ FOV, and denote by $\bm x = [\bm f^\top \ \bm
+% \epsilon ^\top \ \bm \Delta^\top ]^\top \in \mathbb R^{3M^2}$ the parametric
+% form of the data cube and $\bm r \in \mathbb R^{PM^2}$ the vectorized data cube,
+% then the nonlinear relation between them can be expressed using the
+% \textit{data cube generator operator} $\bm \Psi: \mathbb R^{3M^2} \mapsto \mathbb
+% R^{PM^2}$:
+% \begin{equation}
+% \bm r = \bm \Psi (\bm x)
+% \end{equation}
+\subsection{Parametric Spectrum}
+We model the instrument's passband to be dominated by a single bright EUV line
+of interest. This dominant line is parameterized as a Gaussian profile, which
+conveniently captures the three plasma parameters of interest: intensity,
+Doppler shift, and the line width. These parameters vary with spatial position
+$(i,j)$ and are denoted by $(f_{ij}, \epsilon_{ij}, \Delta_{ij})$, respectively.
+With that, each voxel of the data cube $r_{ijk}$ can be represented by:
+\begin{equation}
+r_{ijk} 
+= \frac{f_{ij}}{\Delta_{ij}\sqrt{2\pi}}
+e^{-\frac{(k-M/2-\epsilon_{ij})^2}{2\Delta_{ij}^2}} + b_{ijk} +
+w_{ijk} % \quad \quad i,j,k \in \{1,\dots,M\}
+\label{eq:param_voxel}
+\end{equation}
+where the rest wavelength of the emission line is assumed to be at the center of
+the wavelength axis, leading to the $M/2$ shift in the Gaussian mean. The term
+$b_{ijk}$ includes the coronal background and any contribution from secondary
+contaminant lines within the passband, while $w_{ijk}$ represents the Gaussian
+approximation error for the dominant line.
+
+While this parametric formulation significantly reduces the dimensionality of
+the inverse problem, it remains consistent with the physical characteristics of
+typical EUV observations. First, the assumption of a single dominant line is
+validated by the differential emission measure (DEM) analysis for the MUSE
+mission \citep{de2019multi}, which demonstrates that a proper passband selection
+can isolate a dominant EUV line such that its intensity exceeds secondary
+contaminant lines by an order of magnitude or more.  Second, although solar
+plasmas in regions such as flares can exhibit physical deviations from a purely
+Gaussian profile, such as heavier tails \citep{lorinvcik2020plasma}, current EUV
+spectrographs possess instrumental widths comparable to the inherent widths of
+coronal lines. The resulting convolution with the instrument response function
+inherently smooths these physical deviations, rendering the observed profiles
+highly Gaussian. Finally, while the terms $b_{ijk}$ and $w_{ijk}$ are explicitly
+included in Eq.  \ref{eq:param_voxel} to accurately model the physics of the
+observed plasma, we do not explicitly fit for them in the inversion step. As
+detailed in Section \ref{sec:learned_recon}, our learning-based approach trains
+on realistic data that natively contains these components, allowing the neural
+network to implicitly map around them and isolate the target Gaussian parameters
+without requiring explicit background subtraction or multi-line modeling.
+
+Looking forward, this framework can be extended to include an arbitrary level of
+complexity to handle severe spectral blending or extreme flare events. A more
+robust future approach could employ a hierarchical model: a first stage would
+specify the local model complexity, such as the number of spectral lines or the
+use of non-Gaussian parameterizations, and a second stage would estimate the
+corresponding model parameters. However, expanding the model's physical
+complexity introduces a fundamental trade-off: decreased identifiability.
+Because the instrument only captures a finite number of projections, there is a
+strict upper bound on the number of free parameters that can be accurately
+reconstructed. To overcome this limitation, future approaches could introduce
+tighter physical constraints by integrating the tomographic inversion with
+Differential Emission Measure (DEM) analysis. This integration would naturally
+build upon earlier hybrid tomographic-DEM frameworks
+\citep{frazin2005combination} and recent multi-component decomposition
+techniques tailored for overlapped slitless spectra \citep{cheung2019multi,
+winebarger2019unfolding}.
+
+\subsection{Parametric Forward Model}
+To formulate the forward model parametrically across the entire field of view,
+let $\bm x = [\bm f^\top \ \bm \epsilon ^\top \ \bm \Delta^\top ]^\top \in
+\mathbb R^{3M^2}$ denote the vectorized Gaussian parameters and $\bm e = \bm b +
+\bm w \in \mathbb R^{PM^2}$ the combined background, contamination, and
+approximation error terms for the $M \times M$ FOV. The data cube $\bm r$ can
+then be expressed using the Gaussian data cube generator operator $\bm \Psi:
+\mathbb R^{3M^2} \mapsto \mathbb R^{PM^2}$ as:
+\begin{equation}
+\bm r = \bm \Psi (\bm x) + \bm e
+\end{equation}
+
+Applying the projection operator $\bm H$ to this parametric form, the forward
+model is expressed as:
+\begin{equation}
+\bm y = \mathcal{P}_\gamma(\bm H \bm r) = \mathcal{P}_\gamma(\bm H (\bm \Psi (\bm x) + \bm e))
+\end{equation}
+which can be written in a more compact form by defining the composite operator
+$\bm{\mathcal A} := \bm H \circ \bm \Psi$ and denoting the projected background
+as $\tilde{\bm e}=\bm H \bm e$:
+\begin{equation}
+\bm y = \mathcal{P}_\gamma(\bm {\mathcal A}(\bm x)+ \tilde{\bm e})
+\label{eq:fwd_nl}
+\end{equation}
+
+To highlight the differences between the discretized and the parametric forms,
+note that while $\bm H$ is linear, $\bm {\mathcal A}$ is a nonlinear forward
+operator. Also note that while $\bm x$ has $3M^2$ parameters, $\bm r$ has $PM^2$
+parameters, where typically $P \gg 3$. Therefore, the parametric model results
+in fewer unknowns in the data cube, at the cost of leading to a nonlinear forward
+model.
+
+\subsection{Inverse Problem}
+The goal of the inverse problem is to retrieve the target spectral line
+parameters $\bm x$ from the detector measurements $\bm y$. Mathematically, this
+requires inverting the nonlinear forward mapping $\bm{\mathcal{A}}$. Because the
+projection operator $\bm H$ relies on a limited number of view angles, this
+mapping is underdetermined, rendering the resulting inverse problem
+mathematically ill-conditioned. Consequently, high-frequency measurement noise
+is inherently amplified during the inversion process.
+
+Traditional analytical frameworks stabilize this amplification by formulating a
+regularized least-squares optimization problem:
+\begin{equation}
+\hat {\bm x} = \argmin_{\bm x} \| \bm {\mathcal A}(\bm x) - \bm y \|_2^2 + \mathcal R(\bm x)
+\label{eq:rls}
+\end{equation}
+where $\mathcal R(\bm x)$ is a hand-crafted regularization functional designed
+to constrain the solution space. Because the spectral parameters in $\bm x$
+affect the observations in both a linear (intensity $\bm f$) and nonlinear
+(Doppler shift $\bm \epsilon$ and line width $\bm \Delta$) fashion, this belongs
+to the fundamental class of separable nonlinear least squares problems.
+
+However, solving Eq. \ref{eq:rls} via traditional iterative optimization methods
+presents significant challenges for actual solar observations. First, designing
+a regularization functional $\mathcal{R}(\bm x)$ that accurately captures the
+complex morphology of EUV coronal structures is difficult. Second, while
+previous parametric formulations assume the coronal background is negligible
+\citep{oktem2014parametric,davila2019slitless}, actual EUV measurements contain
+unmodeled background and secondary line blends ($\bm e$). Explicitly isolating
+the target parameters $\bm x$ from these physical background contributions
+within an ill-conditioned tomographic framework further exacerbates the inherent
+non-uniqueness of the problem, reducing the identifiability of the true
+parameters and rendering the optimization highly susceptible to local minima.
+Given these limitations, there is substantial value in exploring data-driven
+inversion techniques. This motivates our deep learning approach, detailed in
+Section \ref{sec:learned_recon}, which seeks to learn a parameterized
+approximate inverse mapping capable of deriving distinct implicit morphological
+priors for each physical parameter (intensity, velocity, and line width) and
+filtering background contributions directly from observational data.
+
+\section{Learned Reconstruction} \label{sec:learned_recon}
+In this section we describe the developed learning based approach to
+reconstructing the data cube from the slitless spectrograph measurements.
+
+\subsection{Learning Approach}
+The learning approach we adopt to solve this inverse problem entails training 
+a deep reconstruction network $f_\theta: \mathbb R^{PM^2} \rightarrow \mathbb
+R^{3M^2}$ from a dataset $\mathcal D$ of Gaussian fit parameters $\bm x$ and
+their simulated corresponding measurements $\bm y$ via the following
+optimization problem:
+\begin{equation}
+\hat {\theta} = \argmin_{\theta} \sum_{(\bm x_i, \bm y_i) \in \mathcal D} \|\bm
+x_i - f_\theta (\bm y_i) \|_2^2
+\label{eq:erm}
+\end{equation}
+Once the network parameters $\theta$ are learned via \eqref{eq:erm}, $f_\theta$
+is fixed and can be used to reconstruct new $\bm x$'s from their measurements
+$\bm y$.
+
+\subsection{Dataset}
+The adopted supervised training approach requires a dataset of matched pairs of
+target parameters $\bm x$ and corresponding dispersed measurements $\bm y$. Our
+approach for generating the dataset is to first obtain a collection of
+spatial-spectral data cubes ($\bm r_{\text{raw}}$) of the spectral window
+containing the dominant emission line of interest from previous observations. We
+then fit Gaussians to these cubes to obtain the ground-truth target parameters
+$\bm x$, while simultaneously simulating the measurements $\bm y =
+\mathcal{P}_\gamma(\bm H \bm r_{\text{raw}})$ by applying the linear projection
+operator directly to the raw, observational data cubes ($\bm r_{\text{raw}}$).
+By applying the forward projection directly to the raw data, the resulting
+measurements natively incorporate the physics of the EUV spectra, including
+faint secondary line blends, coronal background, and non-Gaussian profile
+variations. This ensures the network learns to filter these physical
+complexities robustly.
+
+We utilize observations from the Extreme Ultraviolet Imaging Spectrometer (EIS)
+aboard the Hinode observatory \citep{culhane2007euv}. Launched in September
+2006, EIS observes the solar corona and upper transition region emission lines
+in the wavelength ranges of \SIrange{170}{210}{\angstrom} and
+\SIrange{250}{290}{\angstrom} with a spectral resolution of
+\SI{22}{\milli\angstrom} and a plate scale of \SI{1}{\arcsecond} per pixel.
+While the instrument offers four slit or slot widths, we restrict our analysis
+to the highest spatial resolution scans.
+
+To construct a comprehensive training dataset, we queried the Hinode Science
+Data Centre (SDC) for EIS raster scans captured between December 2006 and
+December 2025. To ensure sufficient spatial context and adequate sampling of our
+target spectrum, the query was restricted to Active Region (AR) observations
+utilizing the \SI{1}{\arcsecond} slit, requiring a field of view exceeding $64
+\times 64$ arcseconds and capturing the Fe XII \SI{195.12}{\angstrom} spectral
+window. This strict filtering yielded 2,383 candidate scans.
+
+The selected HDF5 files were processed using the EIS Python Analysis Code
+(EISPAC) package \citep{weberg2023eispac}. We utilized the
+\lstinline|eispac.read_cube| routine to apply basic pointing corrections and
+pre-flight radiometric calibration, extracting the raw data cube centered around
+the \SI{195.12}{\angstrom} wavelength. Because this spectral window contains a
+known secondary blend and coronal background emission, the spectra were explicitly
+modeled using a template comprising two Gaussians and a background polynomial.
+This multi-component fitting was performed on the raw cube via the
+Levenberg-Marquardt algorithm \citep{levenberg1944method} due to
+its flexibility and extensive legacy in solar and heliophysics research. The
+parameters of the primary Fe XII Gaussian component were then isolated and
+extracted to serve as the clean ground-truth two-dimensional maps of intensity,
+velocity, and line width ($\bm x$). Concurrently, the corrected raw data cube was interpolated onto our
+instrument's spectral grid and fed through the linear forward tomographic
+operator to simulate the dispersed measurements ($\bm y$) at five diffraction
+orders ($0, \pm1, \pm2$). Figure \ref{fig:dataset} contains example ($\bm x, \bm
+y$) pairs from the dataset.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.45\textwidth]{dset_compact.png}
+\caption{Sample pairs from the EIS dataset for $K=3$ projections. Each column
+represents a sample consisting of an $(\bm x, \bm y)$ pair: the first three rows
+show the intensity, velocity, and line width of the parameters $\bm x$, while
+the last three rows display the corresponding $0$, $-1$, and $1$ order
+measurements of $\bm y$.}
+\label{fig:dataset}
+\end{figure}
+
+To ensure the neural network is trained exclusively on physically valid and
+high-fidelity signals, we applied a strict masking protocol to eliminate
+anomalous data, cosmic ray hits, and non-convergent fits. Spatial locations were
+masked and excluded from the dataset if the fit failed to converge, or if the
+extracted parameters fell outside physically expected bounds: intensity outside
+the range of \num{100} to \num{25000}
+\unit{\erg\per\centi\metre\squared\per\second\per\steradian}, absolute velocity
+exceeding \SI{68.5}{\kilo\metre\per\second}, or line width narrower than the
+instrument's spectral resolution of \SI{0.022}{\angstrom}. To accommodate the
+memory constraints of the neural network while simultaneously augmenting the
+total number of training samples, we extracted $15$ independent $64 \times 64$
+spatial patches from the valid, unmasked regions of each full field-of-view
+observation. 
+
+To properly train and evaluate the network, the compiled dataset is partitioned
+into training, validation, and test subsets, serving to optimize model learning,
+tune hyperparameters, and provide unbiased evaluation, respectively. We employed
+an \SI{80}{\percent}--\SI{10}{\percent}--\SI{10}{\percent} split for these
+subsets. Crucially, to prevent data leakage, this partitioning was performed
+at the level of unique parent observation rasters rather than individual
+patches. This strategy ultimately yields \num{23036} patches for training
+and \num{2880} for validation. The final \SI{10}{\percent} of the independent 
+parent rasters are held out as an unseen candidate testing pool, from which 
+representative patches are drawn exclusively for the comparative experiments 
+in Section \ref{sec:num_res}.
+
+Prior to training the neural network, the ground-truth parameters ($\bm x$) and
+the simulated measurements ($\bm y$) are normalized to ensure stable network
+training and convergence. To preserve the relative physical intensity variations between
+disparate coronal structures, the intensity maps ($\bm f$) and the dispersed
+measurements ($\bm y$) are scaled by a global constant factor of \num{6000}.
+This specific scalar was chosen to represent the 99.9th percentile of the Fe XII
+\SI{195.12}{\angstrom} intensities observed within our training dataset.
+While rare extreme values can exceed this soft upper bound (up to the masked
+limit of \num{25000}), scaling by \num{6000} normalizes the vast majority of
+network inputs and targets to a computationally stable range (approximately
+$[0, 1]$) without distorting the underlying physical emission ratios. Conversely,
+the velocity ($\bm \epsilon$)
+and line width ($\bm \Delta$) parameter maps are normalized to zero mean and
+unit variance by subtracting the global mean and dividing by the global standard
+deviation computed across the entire training set. Following
+the network's prediction, the inverse transformations are applied to retrieve
+the parameters in their true physical units.
+ 
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.45\textwidth]{unet.png}
+\caption{Diagram of the U-Net architecture used in this work for $K=3$ input
+channels, corresponding to measurements from three detectors. A separate U-Net
+is trained for each value of $K$, with the number of input channels matching the
+number of detectors. In the encoder path, the number of channels doubles while
+the spatial resolution halves after each layer, capturing increasingly abstract
+features. In the decoder path, the number of channels halves while the spatial
+resolution doubles, progressively reconstructing the output. Skip connections
+between corresponding layers in the encoder and decoder paths preserve spatial
+information.}
+\label{fig:unet}
+\end{figure}
+
+% The signal-to-noise ratio (SNR) is set to \SI{35}{\decibel} in each detector
+% channel $\bm y_i \in \mathbb R ^{64 \times 64}, \ i \in \{1,\dots,K\}$.
+
+\subsection{Training and Network Architecture}
+To learn the approximate inverse mapping $f_\theta$, we employ a Convolutional
+Neural Network (CNN) based on the U-Net architecture \citep{ronneberger2015u}.
+Originally developed for image segmentation, U-Net has become a foundational
+architecture for complex image-to-image regression tasks \citep{isola2017image,
+jin2017deep, ulyanov2018deep, zhou2019unet++}. Its efficacy stems from its
+symmetric encoder-decoder structure, which extracts deep semantic features via
+successive downsampling while recovering high-resolution spatial details through
+upsampling and skip connections. This multi-scale feature representation
+\citep{ye2019understanding, liu2022learning} is uniquely suited for our
+tomographic inversion, as it allows the network to simultaneously analyze
+localized spectral line profiles and broader regional coronal structures.
+
+The network takes a three-dimensional tensor as input, consisting of two spatial
+dimensions and a channel dimension. We utilize the channel dimension to stack
+the $K$ dispersed spectral orders ($k \in \{1,\dots,K\}$) captured by the
+simulated detectors ($\bm y$). The network outputs a tensor of identical spatial
+dimensions, where the three channels correspond to the retrieved parameter maps:
+intensity, velocity, and line width ($\bm{x}$). Within the network, the encoder
+path reduces spatial dimensions using $2 \times 2$ max pooling operations, while
+the decoder path recovers them via bilinear interpolation. Each downsampling and
+upsampling step is separated by a double convolutional block consisting of two
+sequential $3 \times 1$ convolutional layers, each followed by batch
+normalization and a Rectified Linear Unit (ReLU) activation. The number of
+feature channels progressively doubles at each encoder stage and halves at each
+decoder stage.
+
+The network weights are optimized by minimizing the empirical risk
+\eqref{eq:erm} using the Adam optimizer \citep{kingma2014adam} with a learning
+rate of $2 \times 10^{-4}$. We train the model for $200$ epochs with a batch
+size of $4$. The architecture is implemented in the PyTorch framework, and the
+training process completes in approximately $6.5$ hours on a single NVIDIA TITAN
+Xp GPU.
+\section{Numerical Results} \label{sec:num_res}
+% \begin{itemize}
+  % \item We use EIS line fits for training the network
+  % \item We use simulated measurements according to the forward model
+  % \item We perform experiments to find the optimal network architecture, 
+  % hyperparameters, data augmentation methods, 
+  % \item We perform experiments to test the performance of the method for 
+  % various training dataset sizes, testing datasets
+  % \item We compare the proposed approach with the MART method and the other 
+  % parametric reconstruction approach under various observational settings
+% \end{itemize}
+In this section, we demonstrate the effectiveness of the proposed approach by
+evaluating it under various observational settings and comparing its performance
+with the recognized tomographic inversion approach in this field, MART, and a
+more recently proposed parametric inversion approach \citep{davila2019slitless}
+that inspired the use of the parametric model in this work. The observational
+settings include varying the number of projections $K$ and varying the SNR
+$\gamma$. These experiments reflect practical design considerations, where the
+number of projections relates to the number of detectors available, and the SNR
+depends on the exposure time chosen for each observation. In all experiments,
+the instrument is modeled with a narrow bandpass centered on the Fe XII
+\SI{195.12}{\angstrom} emission line, using the same spectral dispersion scale
+of \SI{22}{\milli\angstrom\per\pixel} as the EIS instrument.
+
+For the projection count experiment, we consider the spectral orders
+$\mathcal{S} = \{0, -1, +1, -2, +2\}$ and vary the number of detectors $K \in
+\{2, 3, 4, 5\}$, placing them at the first $K$ orders in $\mathcal{S}$ (e.g.,
+for $K = 2$, we use orders $0$ and $-1$). This evaluation is performed at the
+native noise level ($\gamma = \infty$), ensuring the algorithms are tested
+directly on the authentic instrumental Poisson noise inherently present in the
+raw EIS source data. For the noise experiment, we evaluate performance across
+decreasing SNR levels ($\gamma \in \{30, 20, 10\}$) while keeping the number of
+projections constant at $K = 3$. The introduction of additional synthetic noise
+in these specific trials serves to simulate lower-fidelity observational
+scenarios, such as those resulting from shorter exposure times or observation of
+dimmer coronal regions.
+
+While the proposed U-Net can evaluate thousands of patches in seconds, executing 
+1D MAP and MART across a massive dataset is computationally intractable due to 
+their iterative bottlenecks. Consequently, to ensure a direct one-to-one 
+comparison, all methods are evaluated on a randomly selected, representative 
+subset of 5 independent $64 \times 64$ observation patches drawn from the 
+unseen candidate testing pool, with measurements simulated according to the 
+specific $(K, \gamma)$ configurations.
+
+The root mean square error (RMSE) and the systematic bias (mean error) between
+the ground-truth parameters and the reconstructions, evaluated in their native
+physical units, are used as the primary performance metrics. 
+
+For a fair comparison, the parameters of each method are optimized for each of
+the observational settings $(K, \gamma)$. A separate U-Net is trained with the
+EIS training dataset for each observational setting. Similarly, the tunable
+hyperparameters of the compared methods are optimized for each $(K, \gamma)$
+setting, where the average reconstruction RMSE of 5 randomly picked patches from
+the EIS validation set is used as the optimality criterion.
+
+% \subsection{U-Net Reconstructions and Error Analysis}
+% Figure \ref{fig:unet_rec} shows an example U-Net reconstruction from the EIS
+% test set and Figure \ref{fig:amos} shows the histograms of the
+% U-Net reconstruction errors over the entire EIS test set. 
+
+% \begin{figure}[!t]
+% \centering
+% \includegraphics[width=0.5\textwidth]{recons_0.png}
+% \caption{A typical EIS result. First row shows the 0, -1, +1 order measurements
+% (left to right). Second row shows the true maps for the intensity, velocity,
+% and line width while the last row shows the U-Net reconstructions.}
+% \label{fig:unet_rec}
+% \end{figure}
+
+% \begin{figure}[!t]
+% \centering
+% \includegraphics[width=0.5\textwidth]{hists_1d.png}
+% \caption{Histograms of the U-Net reconstruction errors in the EIS test set.}
+% \label{fig:amos}
+% \end{figure}
+
+% \begin{figure}[!h]
+% \gridline{
+%          \fig{inten_hist.png}{0.2\textwidth}{(a)}
+%          \fig{vel_hist.png}{0.2\textwidth}{(b)}
+% }
+% \vspace{-0.1in}
+% \gridline{
+%          \fig{width_hist.png}{0.2\textwidth}{(c)}
+%          \fig{inten_hist.png}{0.2\textwidth}{(d)}
+% }
+% \caption{2D histograms of the parameters in the testing set and their
+% reconstruction errors by the U-Net.}
+% \label{fig:amos}
+% \end{figure}
+
+\subsection{Compared Methods}
+Here we describe the methods we compare the proposed method against; the
+parametric approach \citep{davila2019slitless} which we call as 1D MAP, and the
+tomographic inversion method, MART. \\
+
+\noindent
+\textbf{1D MAP.} \ The 1D MAP approach utilizes a simplified version of the
+parametric Gaussian forward model described in Section \ref{sec:par_fwd_mod},
+notably omitting the background term ($\tilde{\bm e}$). It formulates the
+inversion as a regularized nonlinear least-squares optimization problem, equivalent
+to a Maximum A Posteriori (MAP) estimation, that is solved independently for
+each one-dimensional detector column:
+\begin{equation}
+\hat {\bm x}_i = \argmin_{\bm x_i} \|\bm y_i - \bm{\mathcal A} (\bm x_i) \|_2^2
++ \mathcal R (\bm x_i) \ , \quad i \in \{1,\dots,M\}
+\label{eq:1dmap}
+\end{equation}
+where $\bm x_i \in \mathbb R^{3M}$ and $\bm y_i \in \mathbb R^{KM}$ are the
+$i^{\text{th}}$ column of the parameters and the measurements, respectively. The
+spatial smoothness penalty is restricted entirely to the vertical dimension:
+$\mathcal R (\bm x_i) = \sum_{j=2}^M \alpha_1(f_{i,j}-f_{i,j-1})^2 +
+\alpha_2(\epsilon_{i,j}-\epsilon_{i,j-1})^2 +
+\alpha_3(\Delta_{i,j}-\Delta_{i,j-1})^2$.
+
+A fundamental weakness of this approach is its independent column-wise
+formulation; reconstructing 1D columns via Eq. \eqref{eq:1dmap} ignores all
+morphological coupling across the orthogonal spatial dimension. Additionally,
+because the objective function is highly nonconvex, finding the global minimum
+is computationally challenging. Although \citet{oktem2014parametric} developed a
+dynamic programming algorithm to guarantee global optimality for this 1D
+formulation, the accuracy of even this global solution is inherently constrained
+by the simplistic 1D spatial prior. Furthermore, its high computational cost
+makes it impractical for routine processing of large-scale observational data.
+Consequently, practical implementations rely on local iterative solvers where
+convergence to a global minimum is not guaranteed and depends heavily on
+initialization. Finally, by utilizing a simplified forward model that fails to
+account for background emission, the inversion systematically overestimates both
+the intensity and line width when applied to raw observational data. While
+\citet{davila2019slitless} originally implemented this using the Nelder-Mead
+simplex algorithm \citep{nelder1965simplex}, we instead utilize the L-BFGS-B
+method \citep{zhu1997algorithm} via the \lstinline|scipy.optimize.minimize|
+Python library, as we found this quasi-Newton approach yields superior
+convergence for this specific inverse problem.
+
+\noindent
+\textbf{MART.} \ The multiplicative algebraic reconstruction technique (MART)
+has been developed for limited angle tomography problems
+\citep{gordon1970algebraic, okamoto1991simultaneous} and has the
+advantages of being a simple and a fast method. It was reported to be the best
+performing inversion algorithm among various others for the MOSES inversions
+\citep{fox2011snapshot}. Also, the recent ESIS mission uses this method for
+their inversions \citep{parker2022first}.
+
+MART is based on a multiplicative update rule that aims to iteratively adjust
+the reconstructed volume $\bm r \in \mathbb R^{PM^2}$ until its projections $\bm
+H \bm r$ match the actual measured projection data $\bm y\in \mathbb R^{KM^2}$.
+We implement the variant of MART described in \cite{parker2022first} which is as
+follows:
+
+\begin{enumerate}
+\item Create a guess cube $\bm v \in \mathbb R^{PM^2}$ as $\bm v = \Psi \left([
+\bm f_0 \ \bm \epsilon_0 \ \bm \Delta_0] \right)$ where $\bm f_0 = \bm y^{(0)}$,
+$\bm \epsilon_0 = \bm 0$, $\bm \Delta_0 = {\bar \Delta}_\text{EIS}\cdot \bm 1$
+where ${\bar \Delta}_\text{EIS}$ is the average line width of all the EIS 
+training set.
+\item Enhance the contrast of $\bm v$ and normalize:
+\begin{equation}
+\bm v \leftarrow \frac{\bm v+\bm v^{(1+\alpha)}}{\sum_{xy\lambda}\bm v + \bm
+v^{(1+\alpha)}}\sum_{xy\lambda}\bm v
+\end{equation}
+\item Convolve $\bm v$ with a smoothing kernel $\bm h$, $\bm v \leftarrow \bm v
+\ast \bm h$:
+\begin{equation}
+    h_{ijk} = \frac{2^{3-|i|-|j|-|k|}}{64} \quad \text{for} \quad i,j,k \in \{-1,0,1\}
+\end{equation}
+\item Calculate the projections:
+\begin{equation}
+\tilde {\bm y} = \bm H \bm v
+\end{equation}
+\item Calculate correction factors for each order $a$, $\bm c^{(a)} \in \mathbb R^{M^2}$,
+\begin{equation}
+    \bm c^{(a)} = \left[ \frac{\bm y^{(a)}}{\tilde {\bm y}^{(a)}} \right]^{2/K}
+\end{equation}
+\item Assign the correction factors to the data cube through the integration
+lines:
+\begin{equation}
+    \bm C^{(a)} = \bm H^\top_{(a)} \bm c^{(a)} \quad a \in \mathcal S
+\end{equation}
+where $\bm H_{(a)} \in \mathbb R^{M^2 \times PM^2}$ is the projection operator 
+for order $a$.
+\item Apply the product of each correction to $\bm v$:
+\begin{equation}
+    \bm v \leftarrow \bm v \{ \prod_{a \in \mathcal S} \bm C^{(a)} \}^{1/K}
+\end{equation}
+\item Repeat steps 4-7 for $N_\text{inner}$ number of iterations.
+\item Repeat steps 2-8 for $N_\text{outer}$ number of iterations.
+\end{enumerate}
+
+The algorithm consists of an outer loop between steps 2-8 and an inner loop
+between steps 4-7. The outer loop has the additional contrast enhancement
+and smoothing steps which can be considered as incorporating the priors for 
+reconstruction, whereas the inner loop performs corrections to the data cube to 
+make sure the reconstructed data cube is consistent with the measurements.
+
+
+The contrast enhancement step serves the purpose of counteracting the unwanted
+smearing along the projection direction that the tomographic inversion
+algorithms suffer from \citep{kak2001principles}. However, even with the
+contrast enhancement, we observe smearing along the spectral dimension of the
+data cube, which results in significant overestimation of the line widths. To
+overcome that, we impose a prior on the estimated spectra by assuming that the
+average of the spectral lines in the data cube is close to the average spectral
+line obtained from the EIS training data (up to a scaling in intensity). This
+prior is conveniently implemented by observing that the $90^\circ$ projection of
+the cube consists of the averaged out spectral lines across one of the spatial
+dimensions. Hence, we construct the $90^\circ$ projection out of the
+\textit{average} spectral line obtained from the EIS training data with proper
+scaling, and provide it to MART as an extra projection, which greatly reduces
+the smear by constraining the profiles to have a reasonable line width on
+average. This prior has also been used by \citet{fox2003data} and
+\citet{fox2011snapshot} for simulated MOSES inversions where they report that
+their reconstructions significantly deteriorate in the absence of it, however,
+they assumed that the \textit{actual} $90^\circ$ projection obtained from the
+cube is known, which is a strong assumption that we avoid here by using the
+training data instead of the actual projection.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=1\textwidth]{bar_charts.png}
+\caption{Quantitative comparison of reconstruction errors across varying
+projection counts ($K$, top row) and signal-to-noise ratios ($\gamma$, bottom
+row) for the three physical parameters. To distinguish total error magnitude
+from systematic directional error, the charts utilize a dual-encoded visual
+design: the wider, semi-transparent bars represent the total root mean square
+error (RMSE), while the nested, solid inner bars indicate the mean error (bias).
+Across all observational configurations, the proposed U-Net effectively
+mitigates the severe systematic overestimations present in the 1D MAP and MART
+baselines, consistently yielding the lowest RMSE and near-zero bias.}
+\label{fig:compsweep}
+\end{figure*}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.5\textwidth]{recons_v4.png}
+\caption{The source (left column) and the reconstructions of each method for
+$K=3$ projections. The units for velocity and line width are given in 
+\unit{\kilo\metre\per\second}.}
+\label{fig:comps}
+\end{figure}
+
+
+
+\subsection{Comparison Experiments}
+
+The reconstruction performance of the proposed U-Net is evaluated against the 1D
+MAP and MART baselines across varying projection counts ($K$) and
+signal-to-noise ratios ($\gamma$). The quantitative results are detailed in
+Table \ref{tab:table_k} for the $K$-sweep and Table \ref{tab:table_gam} for the
+$\gamma$-sweep experiments. To visually separate the total error magnitude from
+the systematic directional error, Figure \ref{fig:compsweep} presents a
+dual-encoded visualization where the mean error (bias) is nested within the
+total RMSE.
+
+Table \ref{tab:table_k} demonstrates the impact of varying the number of
+projections ($K$) at the native observational noise level ($\gamma=\infty$).
+Across all values of $K$, the proposed U-Net approach consistently achieves the
+lowest RMSE for all three spectral parameters. Most notably, the classical
+baseline methods exhibit a significant systematic overestimation (positive bias)
+in intensity and line width, albeit for different reasons. For 1D MAP, this is a
+direct consequence of model mismatch; as anticipated in Section
+\ref{sec:par_fwd_mod}, its formulation fundamentally ignores the coronal
+background emission, forcing the target Gaussian to absorb the excess flux. For
+MART, which linearly reconstructs the total volumetric flux, the bias arises
+because the background continuum cannot be cleanly disentangled from the target
+peak during parameter extraction, especially when compounded by severe
+tomographic smearing. Furthermore, the U-Net effectively utilizes additional
+projections, showing a steady improvement in line width and velocity estimation
+as $K$ increases from 2 to 5.
+
+\begin{table}[h]
+\begin{center}
+\setlength{\tabcolsep}{2.8 pt}
+\caption{Reconstruction RMSE and Bias values of each method evaluated using varying number of projections $K$ at native SNR ($\gamma=\infty$). Best performance for each metric is highlighted in bold (lowest magnitude for Bias). The proposed approach attains the lowest RMSE in all categories, while drastically reducing the systematic overestimation (Bias) of intensity and line width seen in classical solvers.}
+\vspace{-0.07 in}
+\label{tab:table_k}
+\begin{tabular}{*8c}
+\hline
+\textbf{K} & \textbf{Method} & \multicolumn{2}{c}{\textbf{Intensity}} & \multicolumn{2}{c}{\textbf{Velocity}} & \multicolumn{2}{c}{\textbf{Line Width}} \\
+\hline
+ &  & RMSE & Bias & RMSE & Bias & RMSE & Bias \\
+ &  & \multicolumn{2}{c}{\makebox[0pt][c]{(\unit{\erg\per\centi\metre\squared\per\second\per\steradian})}} & \multicolumn{2}{c}{(\unit{\kilo\metre\per\second})} & \multicolumn{2}{c}{(\unit{\kilo\metre\per\second})} \\
+\hline\hline
+\multirow{3}{*}{2} & \textit{1D MAP} & 378.4 & 344.5 & 3.532 & 0.395 & 3.764 & 3.414 \\
+{} & MART & 379.6 & 345.9 & 3.503 & \textbf{0.110} & 4.600 & 4.301 \\
+{} & U-Net & \textbf{78.9} & \textbf{-46.6} & \textbf{2.220} & -0.161 & \textbf{1.381} & \textbf{0.032} \\
+\hline
+\multirow{3}{*}{3} & \textit{1D MAP} & 374.6 & 341.0 & 3.222 & 0.751 & 3.845 & 3.505 \\
+{} & MART & 376.7 & 343.2 & 3.233 & \textbf{0.088} & 4.660 & 4.390 \\
+{} & U-Net & \textbf{63.4} & \textbf{-39.5} & \textbf{1.841} & 0.140 & \textbf{1.300} & \textbf{-0.108} \\
+\hline
+\multirow{3}{*}{4} & \textit{1D MAP} & 368.4 & 334.9 & 3.690 & 1.298 & 4.289 & 3.966 \\
+{} & MART & 370.8 & 337.7 & 3.199 & \textbf{0.068} & 4.763 & 4.493 \\
+{} & U-Net & \textbf{91.6} & \textbf{-64.1} & \textbf{1.847} & -0.074 & \textbf{1.252} & \textbf{0.210} \\
+\hline
+\multirow{3}{*}{5} & \textit{1D MAP} & 364.0 & 331.1 & 4.139 & 1.941 & 4.980 & 4.616 \\
+{} & MART & 366.5 & 334.2 & 3.165 & \textbf{0.073} & 4.916 & 4.670 \\
+{} & U-Net & \textbf{67.0} & \textbf{-44.7} & \textbf{1.766} & 0.272 & \textbf{1.057} & \textbf{0.035} \\
+\hline
+\end{tabular}
+\end{center}
+\vspace{-0.20 in}
+\end{table}
+
+Table \ref{tab:table_gam} details the robustness of the methods against varying
+noise levels at a fixed projection count ($K=3$). The U-Net model maintains
+superior performance across all evaluated SNR levels. Remarkably, even at the
+most severe noise level ($\gamma=10$), the U-Net achieves velocity and line
+width RMSEs that are substantially lower than those of 1D MAP and MART operating
+on the pristine native data ($\gamma=\infty$). 
+
+\begin{table}[t]
+\begin{center}
+\setlength{\tabcolsep}{2.8 pt}
+\caption{Reconstruction RMSE and Bias values of each method evaluated using varying SNR ($\gamma$) levels at $K=3$. The proposed approach maintains the lowest overall errors (RMSE) for all parameters across all noise levels.}
+\label{tab:table_gam}
+\begin{tabular}{*8c}
+\hline
+\textbf{$\gamma$} & \textbf{Method} & \multicolumn{2}{c}{\textbf{Intensity}} & \multicolumn{2}{c}{\textbf{Velocity}} & \multicolumn{2}{c}{\textbf{Line Width}} \\
+\hline
+ &  & RMSE & Bias & RMSE & Bias & RMSE & Bias \\
+ &  & \multicolumn{2}{c}{\makebox[0pt][c]{(\unit{\erg\per\centi\metre\squared\per\second\per\steradian})}} & \multicolumn{2}{c}{(\unit{\kilo\metre\per\second})} & \multicolumn{2}{c}{(\unit{\kilo\metre\per\second})} \\
+\hline\hline
+\multirow{3}{*}{10} & \textit{1D MAP} & 378.8 & 341.1 & 3.753 & 0.299 & 3.529 & 3.149 \\
+{} & MART & 425.9 & 342.4 & 4.920 & 0.086 & 5.124 & 4.261 \\
+{} & U-Net & \textbf{84.4} & \textbf{-17.1} & \textbf{2.695} & \textbf{-0.071} & \textbf{1.574} & \textbf{0.100} \\
+\hline
+\multirow{3}{*}{20} & \textit{1D MAP} & 375.3 & 341.0 & 3.461 & 0.310 & 3.593 & 3.226 \\
+{} & MART & 389.9 & 343.2 & 3.746 & \textbf{0.090} & 4.779 & 4.357 \\
+{} & U-Net & \textbf{110.5} & \textbf{-66.7} & \textbf{2.615} & 0.547 & \textbf{1.554} & \textbf{0.114} \\
+\hline
+\multirow{3}{*}{30} & \textit{1D MAP} & 375.5 & 341.1 & 3.553 & 0.879 & 3.586 & 3.202 \\
+{} & MART & 382.4 & 343.0 & 3.472 & \textbf{0.091} & 4.712 & 4.375 \\
+{} & U-Net & \textbf{96.8} & \textbf{-68.1} & \textbf{2.138} & 0.184 & \textbf{1.433} & \textbf{0.123} \\
+\hline
+\multirow{3}{*}{$\infty$} & \textit{1D MAP} & 374.6 & 341.0 & 3.222 & 0.751 & 3.845 & 3.505 \\
+{} & MART & 376.7 & 343.2 & 3.233 & \textbf{0.088} & 4.660 & 4.390 \\
+{} & U-Net & \textbf{63.4} & \textbf{-39.5} & \textbf{1.841} & 0.140 & \textbf{1.300} & \textbf{-0.108} \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+Qualitative results in Figure \ref{fig:comps} support these quantitative
+findings. The U-Net successfully captures the detailed spatial morphology and
+sharp structural boundaries of the coronal features across all parameters.
+Conversely, 1D MAP suffers from prominent vertical streak artifacts due to its
+independent column-wise optimization, which fails to enforce horizontal spatial
+coherence. MART avoids these streaks but produces severely over-smoothed
+parameter fields, causing it to miss fine dynamic variations in the velocity and
+line width maps.
+
+
+% \subsection{Robustness Analysis}
+% \subsubsection{Distribution Shift in Parameter Values}
+
+% \begin{figure}[h]
+% \centering
+% \includegraphics[width=0.5\textwidth]{paramhists.png}
+% % \caption{Histograms of the parameters in the EIS training set}
+% \label{fig:paramhist}
+% \end{figure}
+
+% \begin{table}[h!]
+% \begin{center}
+% \caption{Reconstruction SSIM values of each method for the cases of No Shift / Shift}
+% \begin{tabular}{|c||c|c|c|}
+% \hline
+% \textbf{Method} & \textbf{Intensity} & \textbf{Velocity} & \textbf{Line Width} \\
+% \hline\hline
+% \textit{1D MAP} & 0.920/0.850 & 0.620/0.430 & 0.560/0.410 \\
+% \hline
+% \textit{SMART} & 0.940/0.910 & 0.570/0.460 & 0.510/0.410 \\
+% \hline
+% \textit{\textbf{Ours}} & \textbf{0.950/0.930} & \textbf{0.750/0.680} & \textbf{0.710/0.630} \\
+% \hline
+% \end{tabular}
+% \end{center}
+% \end{table}
+
+% \subsubsection{Distribution Shift in Spatial Morphologies}
+
+% \subsubsection{Distribution Shift in Signal to Noise}
+
+% \begin{table}[h!]
+% \begin{center}
+% \caption{Reconstruction SSIM values of each method for the cases of High SNR / Low SNR}
+% \begin{tabular}{|c||c|c|c|}
+% \hline
+% \textbf{Method} & \textbf{Intensity} & \textbf{Velocity} & \textbf{Line Width} \\
+% \hline\hline
+% \textit{1D MAP} & 0.920/0.850 & 0.620/0.430 & 0.560/0.410 \\
+% \hline
+% \textit{SMART} & 0.940/0.910 & 0.570/0.460 & 0.510/0.410 \\
+% \hline
+% \textit{\textbf{Ours}} & \textbf{0.950/0.930} & \textbf{0.750/0.680} & \textbf{0.710/0.630} \\
+% \hline
+% \end{tabular}
+% \end{center}
+% \end{table}
+
+\section{Discussion and Conclusions}
+We developed a deep learning approach to solve the challenging problem of
+disentangling overlapped spectra for a generic slitless spectrograph design with
+a narrow bandpass in the EUV and detectors placed at multiple orders. A CNN was
+trained to map spectrograph observations directly to the underlying spectral
+line parameters using a large, physically realistic dataset derived from
+Hinode/EIS observations.
+
+The performance of our method was demonstrated through rigorous comparisons with
+a widely used tomographic reconstruction approach, MART, and a recently proposed
+parametric inversion approach, 1D MAP. Experiments across various observational
+settings showed that the proposed U-Net achieves significant quantitative and
+qualitative improvements. Crucially, the primary driver of this performance is 
+the network's ability to effectively regularize a severely ill-posed, nonlinear, 
+and non-convex inverse problem. By leveraging sophisticated data-driven spatial 
+and spectral priors, the U-Net successfully recovers the sharp spatial morphology 
+of coronal structures without introducing the independent column-wise streak 
+artifacts seen in 1D MAP or the severe over-smoothing characteristic of MART, 
+despite MART being supplemented with a data-driven spatial prior.
+As a secondary benefit, the network learns to implicitly filter out unmodeled 
+coronal background emission and secondary spectral blends, thereby completely 
+mitigating the systematic overestimation (positive bias) in intensity and line 
+width that further plagues the analytical methods. Alongside its high
+robustness to severe observational noise levels, the proposed method offers the
+practical advantage of orders-of-magnitude faster reconstruction times once
+trained.
+
+This work demonstrates the transformative potential of data-driven,
+learning-based approaches in solar slitless spectroscopy. By pushing the limits
+of spectral inversion accuracy and computational efficiency, this framework
+significantly extends the capabilities of solar spectral imagers to provide more
+conclusive insights into the complex dynamics of the transition region and the
+solar corona. Future work will explore extending this learning framework to 
+incorporate more sophisticated, hierarchical spectral models capable of 
+resolving multi-thermal or highly dynamic regions.
+\newpage 
+
+\bibliography{apj25}
+\bibliographystyle{aasjournalv7}
+
+%% This command is needed to show the entire author+affiliation list when
+%% the collaboration and author truncation commands are used.  It has to
+%% go at the end of the manuscript.
+%\allauthors
+
+%% Include this line if you are using the \added, \replaced, \deleted
+%% commands to see a summary list of all changes at the end of the article.
+%\listofchanges
+
+\end{document}
+
+% End of file `sample7.tex'.
