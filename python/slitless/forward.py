@@ -10,6 +10,8 @@ from mas.decorators import _vectorize
 from scipy.stats import poisson
 from scipy.ndimage import convolve1d
 
+SPEED_OF_LIGHT = 299792.458
+
 def gauss(x, mean, sigma):
     return 1 / sigma / (2*np.pi)**0.5 * np.exp(-0.5*((x-mean)/sigma)**2)
 
@@ -494,10 +496,10 @@ class Source():
         inten=None,
         vel=None,
         width=None,
-        wavelength=195.119,
+        rest_wavelength=195.117937907451,
         pix=False
     ):
-        self.wavelength = wavelength
+        self.rest_wavelength = rest_wavelength
         if param3d is not None:
             self.param3d = param3d
             self.inten = param3d[...,0,:,:]
@@ -575,7 +577,8 @@ class Imager():
         *,
         pixel_size=13.5, # um/pixel
         dispersion=1/1.65, # um/mA
-        dispersion_scale=None, # mA/pixel
+        dispersion_scale=None, # A/pixel
+        mid_wavelength=195.119, # A - wavelength of the mid-point of the detector
         instrument_psf=None,
         spectral_orders=[0,-1,1],
         pixelated=False,
@@ -588,10 +591,11 @@ class Imager():
         intenscale=1
     ):
         self.pixel_size = pixel_size
-        self.dispersion_scale = pixel_size / dispersion
+        self.mid_wavelength = mid_wavelength
+        self.dispersion_scale = pixel_size / dispersion / 1e3
         if dispersion_scale is not None:
             self.dispersion_scale = dispersion_scale
-            self.dispersion = pixel_size / dispersion_scale
+            self.dispersion = pixel_size / dispersion_scale / 1e3
         self.spectral_orders = spectral_orders
         self.pixelated = pixelated
         self.mask = mask
@@ -611,11 +615,16 @@ class Imager():
         of the Imager, which has these parameters in the pixel units.
         """
         assert source.pix == False, "Source object is already in pixel dimensions"
+
+        # Absolute wavelength of the shifted line
+        actual_wave = source.rest_wavelength * (1 + source.vel / SPEED_OF_LIGHT)
+        # Pixel shift relative to the array's central wavelength
+        vel_pix = (actual_wave - self.mid_wavelength) / self.dispersion_scale
         self.srpix = Source(
             inten=source.inten/self.intenscale,
-            vel=source.vel*(source.wavelength/300/self.dispersion_scale),
-            width=source.width/self.dispersion_scale*1000,
-            wavelength=source.wavelength,
+            vel=vel_pix,
+            width=source.width/self.dispersion_scale,
+            rest_wavelength=source.rest_wavelength,
             pix=True
         )
         return self.srpix
@@ -628,26 +637,36 @@ class Imager():
         """
         if array==False:
             assert source.pix == True, "Source object is already in physical dimensions"
-            vel = source.vel/(source.wavelength/300/self.dispersion_scale)
-            width = source.width*self.dispersion_scale/1000
+            # Wavelength of the shifted line based on pixel position
+            actual_wave = self.mid_wavelength + source.vel * self.dispersion_scale
+            # Velocity relative to the rest wavelength
+            vel_phy = SPEED_OF_LIGHT * (actual_wave - source.rest_wavelength) / source.rest_wavelength
+            
+            width_phy = source.width * self.dispersion_scale
             if width_unit == 'km/s':
-                width *= 3e5 / source.wavelength
+                width_phy *= SPEED_OF_LIGHT / source.rest_wavelength
             self.srphy = Source(
                 inten=source.inten*self.intenscale,
-                vel=vel,
-                width=width,
-                wavelength=source.wavelength,
+                vel=vel_phy,
+                width=width_phy,
+                rest_wavelength=source.rest_wavelength,
                 pix=False
             )
             return self.srphy
         else:
             out = source.clone() if type(source)==torch.Tensor else source.copy()
             out[...,0,:,:]*=self.intenscale
-            out[...,1,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
+            
+            wave_cen = self.mid_wavelength if hasattr(self, 'srpix') else 195.119
+            rest_cen = self.srpix.rest_wavelength if hasattr(self, 'srpix') else 195.117937907451
+            
+            actual_wavelengths = wave_cen + out[...,1,:,:] * self.dispersion_scale
+            out[...,1,:,:] = SPEED_OF_LIGHT * (actual_wavelengths - rest_cen) / rest_cen
+            
+            out[...,2,:,:] *= self.dispersion_scale
             if width_unit=='km/s':
-                out[...,2,:,:]/=self.srpix.wavelength/300/self.dispersion_scale
-            elif width_unit=='A':
-                out[...,2,:,:]*=self.dispersion_scale/1000
+                out[...,2,:,:] *= SPEED_OF_LIGHT / rest_cen
+                
             return out
 
     def forward_op(self, inten, vel, width):
@@ -698,9 +717,9 @@ class Imager():
 
         if tomo is True:
             fwd_op = forward_op_tomo_3d
-            self.datacube = datacube_generator(self.srpix.param3d)
+            self.datacube = datacube_generator(self.srpix.param3d, lamdim=21)
             self.meas3dar = fwd_op(
-                self.datacube
+                self.datacube, orders=self.spectral_orders
             )
         else:
             fwd_op = forward_op_torch if type(sources.inten)==torch.Tensor else forward_op
