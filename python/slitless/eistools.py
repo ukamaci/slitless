@@ -174,7 +174,8 @@ def fit_spectra_joblib(data_cube, tmplt, n_jobs=48, component=0, fill_masked=Tru
     err_intensity = np.nan_to_num(err_intensity)
 
     rest_wave = p_base[idx_cent]['value'] 
-    velocity = calc_velocity(raw_cent, rest_wave)
+    # Calculate absolute velocity to ensure 1-to-1 matching with datacube spectra
+    velocity = 299792.458 * (raw_cent - rest_wave) / rest_wave
     err_velocity = 299792.458 * (err_cent / rest_wave)
 
     # Filter bad fits
@@ -228,7 +229,7 @@ def fit_spectra_joblib(data_cube, tmplt, n_jobs=48, component=0, fill_masked=Tru
     return param_map, error_map, full_status, corrected_data
 
 
-def eis_to_ssi_interpolator(data_cube, cube_wavelength=None, lamdim=21, kind='cubic'):
+def eis_to_ssi_interpolator(data_cube, cube_wavelength=None, lamdim=21, kind='cubic', pad_mode='edge'):
     """
     Function to convert EIS data cube into SSI data cube via interpolation.
     
@@ -270,8 +271,12 @@ def eis_to_ssi_interpolator(data_cube, cube_wavelength=None, lamdim=21, kind='cu
                 continue
 
             try:
+                if pad_mode == 'edge':
+                    edge_vals = (flux_src[valid][0], flux_src[valid][-1])
+                else:
+                    edge_vals = 0
                 interp_fn = interp1d(wl_src[valid], flux_src[valid], kind=kind,
-                                        bounds_error=False, fill_value=0)
+                                        bounds_error=False, fill_value=edge_vals)
                 data_cube_interpolated[iy, ix, :] = interp_fn(wavelength_grid_target)
             except Exception as e:
                 data_cube_interpolated[iy, ix, :] = np.nan
