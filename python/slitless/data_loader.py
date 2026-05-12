@@ -9,9 +9,9 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from multiprocessing import Pool
 
-stats = np.load('/home/kamo/resources/slitless/data/eis_data/datasets/dset_v4/norm_stats.npy', allow_pickle=True).item()
-WAVELENGTH = 195.119
-SPEEDOFLIGHT = 3e5
+stats = np.load('/home/kamo/resources/slitless/data/eis_data/datasets/dset_v5/norm_stats.npy', allow_pickle=True).item()
+WAVELENGTH = 195.117937907451
+SPEEDOFLIGHT = 299792.458
 
 def meas_transform(meas, stats=stats):
     return meas/6000

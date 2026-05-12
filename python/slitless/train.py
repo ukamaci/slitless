@@ -132,7 +132,7 @@ if __name__ == '__main__':
     numlayers = 4
     LR = 2e-4
     # LR= 0.01
-    EPOCHS = 200
+    EPOCHS = 400
     BATCH_SIZE = 4
     BILINEAR = True
     ksizes = [(3,1)]
@@ -145,12 +145,12 @@ if __name__ == '__main__':
     LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
     OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
-    LOAD = True
+    LOAD = False
     otf = None # on the fly trainset generation 
-    loaded_model_path = '../results/saved/2026_03_14__23_09_56_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_5_eis_v4/best_model.pth'
+    loaded_model_path = '../results/saved/2026_03_15__14_04_59_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_5_eis_v4/best_model.pth'
     # dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
-    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
-    testset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
+    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
+    testset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
     dbsnr = 100
     # noise_model = 'poisson'
     noise_model = None
@@ -159,7 +159,7 @@ if __name__ == '__main__':
     name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
     if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
-    name += '_dssize_full'
+    name += '_eis_v5'
     os.mkdir('../results/saved/'+name)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -328,7 +328,7 @@ if __name__ == '__main__':
     savedir = f'../results/saved/{name}/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
     plot_recons(net, testloader, numim=32, savedir=savedir+'figures/', denormalize=True)
-    dbsnr_l = [15,25,50,None]
+    dbsnr_l = [10,20,30,None]
     ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, noise_model=noise_model, fold='test', 
     data_dir=testset_path, net=net)
     labels_gr = ['int','vel','width'] if net.outch_type=='all' else [net.outch_type]
