@@ -45,16 +45,19 @@ def main():
     tmplt = eispac.read_template(template_filepath)
     
     # Construct wave array and scale cube physically as done in smart()
-    wave = imager.srpix.wavelength + (imager.dispersion_scale / 1000) * (np.arange(lamdim) - lamdim // 2)
-    cube_scaled = cube / (imager.dispersion_scale / 1000) * imager.intenscale
+    wave = imager.mid_wavelength + imager.dispersion_scale * (np.arange(lamdim) - lamdim // 2)
+    cube_scaled = cube / imager.dispersion_scale * imager.intenscale
     
     recon_mpfit_phy = smart_fit_spectra_joblib(cube_scaled, tmplt, wave=wave, n_jobs=-1)
     
     # Scale MPFit output back to pixel units to compare fairly against PMF
+    SPEED_OF_LIGHT = 299792.458
     recon_mpfit_pix = recon_mpfit_phy.copy()
     recon_mpfit_pix[0] /= imager.intenscale
-    recon_mpfit_pix[1] = recon_mpfit_pix[1] * (imager.srpix.wavelength / 300 / imager.dispersion_scale)
-    recon_mpfit_pix[2] = recon_mpfit_pix[2] / (imager.dispersion_scale / 1000)
+    rest_wave = tmplt.parinfo[1]['value']
+    actual_wave = rest_wave * (1 + recon_mpfit_pix[1] / SPEED_OF_LIGHT)
+    recon_mpfit_pix[1] = (actual_wave - imager.mid_wavelength) / imager.dispersion_scale
+    recon_mpfit_pix[2] = recon_mpfit_pix[2] / imager.dispersion_scale
     
     # 4. Evaluate Metrics
     def compute_rmse(true, est):
@@ -93,8 +96,8 @@ def main():
     # Plot 2: Physical Space Overlay
     axes[1].plot(wave, cube_scaled[:, iy, ix], 'ko', label='True Cube (Scaled)', markersize=6)
     
-    pmf_phy_curve = cube_pmf_pix[:, iy, ix] / (imager.dispersion_scale / 1000) * imager.intenscale
-    mpf_phy_curve = cube_mpf_pix[:, iy, ix] / (imager.dispersion_scale / 1000) * imager.intenscale
+    pmf_phy_curve = cube_pmf_pix[:, iy, ix] / imager.dispersion_scale * imager.intenscale
+    mpf_phy_curve = cube_mpf_pix[:, iy, ix] / imager.dispersion_scale * imager.intenscale
     
     axes[1].plot(wave, pmf_phy_curve, 'b-', label='PMF Fit', linewidth=2)
     axes[1].plot(wave, mpf_phy_curve, 'r--', label='MPFit Joblib', linewidth=2)

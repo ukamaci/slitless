@@ -86,7 +86,7 @@ def get_recon_comp_figures_phy(save=False):
     Rec_unet.imager.intenscale=Rec_unet.sources[idx_im].param3d[0].max()
     rec_unet = Rec_unet.imager.frompix(rec_unet, width_unit='km/s', array=True)
     true = Rec_unet.sources[idx_im].param3d
-    true[2] *= 3e5/Rec_unet.sources[idx_im].wavelength
+    true[2] *= 299792.458 / Rec_unet.sources[idx_im].rest_wavelength
     # true = Rec_unet.imager.frompix(true, width_unit='km/s', array=True)
 
     recs = [true, rec_unet, rec_map1d, rec_mart]
@@ -306,5 +306,3 @@ savepath = '/home/kamo/resources/slitless/figures/apj26_post_revision/'
 # get_metric_comp_plots(save=False)
 # get_recon_comp_figures(save=False)
 get_recon_comp_figures_phy(save=True)
-
-

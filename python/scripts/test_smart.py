@@ -11,7 +11,7 @@ data = np.load(path_data+data, allow_pickle=True).item()
 # param4dar, meas4dar = data['param3d'], data['meas']
 param3dar, meas3dar = data['param3d'][4], data['meas'][4]
 source_pix = False
-intenscale = param3dar[0].max()
+intenscale = meas3dar.max()
 
 numdetectors = 3
 dbsnr = 10
@@ -37,101 +37,185 @@ n_jobs=-1
 
 if imager is not None:
     meas = imager.meas3dar.copy()
-NK, M, N = meas.shape
-if inf_prior_width is not None:
-    infprior = gauss_pix(np.outer(np.arange(M),np.ones(M)), M//2, inf_prior_width)
-    meas = np.concatenate((meas, infprior[None]), axis=0)
-    meas[-1]*=meas[0].mean(axis=0)[None]/meas[-1].mean(axis=0)[None]
-    NK += 1 
+    NK, M, N = meas.shape
+    L = 21
+
+    orders = imager.spectral_orders
+    inf = True if inf_prior_width is not None else False
+    orders_list = orders + ['inf'] if inf else orders
+
+    meas_list = [meas[k] for k in range(NK)]
+    if inf:
+        infprior = gauss_pix(np.outer(np.arange(L), np.ones(N)), L//2, inf_prior_width)
+        infprior = infprior / infprior.sum(axis=0) * meas[0].sum(axis=0)
+        meas_list.append(infprior)
+
+    num_projs = len(meas_list)
+
+    mtx_list = []
+    for order in orders_list:
+        mtx_list.append(tomomtx_gen((L, M), orders=[order]))
+
+    mtx_s_list = []
+    for k in range(num_projs):
+        mapped = mtx_list[k].T @ np.ones((mtx_list[k].shape[0], 1))
+        mtx_s_list.append((mapped < 0.01).flatten())
+
+    int0 = meas[0].copy()
     
-orders = imager.spectral_orders
-inf=True if inf_prior_width is not None else False
-orders = orders+['inf'] if inf else orders
-#initialize
-cubes = []
-cors = []
-int0 = meas[0].copy()
-vel0 = np.zeros_like(int0)
-width0 = 1.38*np.ones_like(vel0)
-cube = datacube_generator(np.stack((int0,vel0,width0),axis=0))
-cubes.append(cube)
-k0 = np.array([0.25, 0.5, 0.25])
-k1 = np.outer(k0,k0)
-kernel = k0[None,None] * k1[:,:,None]
+    if imager is not None:
+        rest_wave = imager.srpix.rest_wavelength if hasattr(imager, 'srpix') else 195.117937907451
+        mid_wave = imager.mid_wavelength
+        disp_scale = imager.dispersion_scale
+    else:
+        rest_wave = 195.117937907451
+        mid_wave = 195.119
+        disp_scale = 0.022275
+        
+    vel_pix_0 = (rest_wave - mid_wave) / disp_scale
+    width_pix_0 = 0.02888811 / disp_scale
+    
+    vel0 = vel_pix_0 * np.ones_like(int0)
+    width0 = width_pix_0 * np.ones_like(int0)
+    cube = datacube_generator(np.stack((int0,vel0,width0),axis=0), lamdim=L)
+    
+    k0 = np.array([0.25, 0.5, 0.25])
+    k1 = np.outer(k0,k0)
+    kernel = k0[None,None] * k1[:,:,None]
 
-mtx = tomomtx_gen((M,M), orders=orders)
-mtx_t = np.einsum('ijk->ikj', mtx.reshape(-1,M,M*M))
-mtx_s = (np.sum(mtx_t,axis=2)<0.01).astype(int).reshape(-1,M,M)[:,:,:,None]
-mtx_s = np.repeat(mtx_s, N, axis=3)
-
-for i in range(maxouter):
-    print('Outer Iter: {}/{}'.format(i+1,maxouter))
-    # contrast enhancement
-    cube = (cube + cube**(1+psi))*np.sum(cube)/np.sum(cube + cube**(1+psi))
-    # kernel smoothing
-    cube = convolve(cube, kernel)
-    for j in range(maxinner):
-        # print('Inner Iter: {}/{}'.format(j+1,maxinner))
-        # meas2 = forward_op_tomo_3d(cube, orders=orders, inf=inf)
-        meas2 = (mtx @ cube.reshape(-1,N)).reshape(meas.shape)
-        # chi-square
-        chi = np.mean(((meas-meas2)**2)/(meas+1e-7), axis=(1,2))
-        unconverged = chi>0.0000000001
-        # if all are converged, go to the next iter
-        if np.sum(unconverged)==0:
-            continue
-        # cor = (meas/(meas2+1e-5))**(2/(3+1*(inf==True)))
-        cor = (meas/(meas2+1e-5))**(2/(3))
-        # cor = (meas2/meas)**2/3 # Warning!: reversed order in ESIS2022
-        # Cor = forward_op_tomo_3d_transpose(cor, orders=orders, inf=inf)
-        Cor = np.einsum('ijk,ikm->ijm',mtx_t, cor).reshape(NK,M,M,N)
-        # Cor[mtx_s==1]=1
-
-        mtx_s_u, mtx_s_l = mtx_s.copy(), mtx_s.copy()
-        mtx_s_u[:,M//2:]=0
-        mtx_s_l[:,:M//2]=0
-        tails = Cor[:,M//2,[0,-1],:] #(NK,2,N)
-        ind_ul = mtx_s[:,0,M//2-1][:,None,None] #(NK,1,1,N) 
-        mtx_s_ul = mtx_s_u*ind_ul
-        mtx_s_ur = mtx_s_u*(1-ind_ul)
-        mtx_s_ll = mtx_s_l*(1-ind_ul)
-        mtx_s_lr = mtx_s_l*ind_ul
-        mtx_c_ul = mtx_s_ul * tails[:,[0],None]
-        mtx_c_ur = mtx_s_ur * tails[:,[1],None]
-        mtx_c_ll = mtx_s_ll * tails[:,[0],None]
-        mtx_c_lr = mtx_s_lr * tails[:,[1],None]
-        Cor[mtx_s_ul==1] = mtx_c_ul[mtx_s_ul==1]
-        Cor[mtx_s_ur==1] = mtx_c_ur[mtx_s_ur==1]
-        Cor[mtx_s_ll==1] = mtx_c_ll[mtx_s_ll==1]
-        Cor[mtx_s_lr==1] = mtx_c_lr[mtx_s_lr==1]
-
-        Corr = np.prod(Cor[unconverged],axis=0)**(1/np.sum(unconverged))
-        cube *= Corr
-    print(f'chi:{chi}')
+    for i in range(maxouter):
+        print('Outer Iter: {}/{}'.format(i+1,maxouter))
+        cube = (cube + cube**(1+psi))*np.sum(cube)/np.sum(cube + cube**(1+psi))
+        cube = convolve(cube, kernel)
+        for j in range(maxinner):
+            cube_flat = cube.reshape(L*M, N)
+            
+            meas2_list = []
+            for k in range(num_projs):
+                meas2_list.append(mtx_list[k] @ cube_flat)
+                
+            chi_list = []
+            for k in range(num_projs):
+                chi_list.append(np.mean(((meas_list[k]-meas2_list[k])**2)/(meas_list[k]+1e-7)))
+            chi = np.array(chi_list)
+            unconverged = chi > 1e-10
+            if np.sum(unconverged) == 0:
+                continue
+            
+            Cor_list = []
+            for k in range(num_projs):
+                cor_k = (meas_list[k]/(meas2_list[k]+1e-5))**(2/3)
+                Cor_k_flat = mtx_list[k].T @ cor_k
+                Cor_k_flat[mtx_s_list[k], :] = 1.0
+                Cor_list.append(Cor_k_flat.reshape(L, M, N))
+            
+            Cor = np.stack(Cor_list, axis=0)
+            Corr = np.prod(Cor[unconverged], axis=0)**(1/np.sum(unconverged))
+            cube *= Corr
+        print(f'chi:{np.mean(chi)}')
     # cors.append(Cor)
     # cubes.append(cube)
 
-if fitter=='mpfit':
-    if tmplt is None:
-        template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
-        tmplt = eispac.read_template(template_filepath)
-    lamdim = cube.shape[0]
-    # Construct the wavelength grid assuming pixel units center around lamdim//2
-    wave = imager.srpix.wavelength + (imager.dispersion_scale / 1000) * (np.arange(lamdim) - lamdim // 2)
-    cube = cube / (imager.dispersion_scale / 1000) * imager.intenscale
-    
-    recon = smart_fit_spectra_joblib(cube, tmplt, wave=wave, n_jobs=n_jobs)
-    
-    # convert physical units (km/s, Angstroms) back to pixel units to match original format
-    recon[0] /= imager.intenscale
-    recon[1] = recon[1] * (imager.srpix.wavelength / 300 / imager.dispersion_scale)
-    recon[2] = recon[2] / (imager.dispersion_scale / 1000)
-elif fitter=='pmf':
-    recon = gauss_pmf_fitter(cube)
+# --- DIAGNOSTIC EVALUATION ---
+print("\n" + "="*60)
+print("            DIAGNOSTIC EVALUATION")
+print("="*60)
 
-Source(param3d=recon).plot()
+def get_metrics(true, est):
+    rmse = np.sqrt(np.mean((true - est) ** 2, axis=(-1, -2)))
+    bias = np.mean(est - true, axis=(-1, -2))
+    return rmse, bias
 
-plt.figure()
-plt.imshow(cube.mean(axis=2), cmap='hot')
-plt.colorbar()
+lamdim = 21
+DISP_SCALE_A = 0.022275
+WAVELENGTH_CENTER = 195.119
+SPEED_OF_LIGHT = 299792.458
+template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
+REST_WAVELENGTH = eispac.read_template(template_filepath).parinfo[1]['value']
+
+wave = WAVELENGTH_CENTER + DISP_SCALE_A * (np.arange(lamdim) - lamdim // 2)
+
+# Convert tomographic cube to physical flux density
+cube_phys = cube * intenscale / DISP_SCALE_A
+# Load true datacube and convert to physical flux density
+true_cube_phys = data['datacube'][4].transpose(2,0,1) / DISP_SCALE_A
+
+# 1. MPFit
+print("Fitting reconstructed cube with MPFit (2 Gauss + Bkg)...")
+tmplt = eispac.read_template(template_filepath)
+recon_mpfit = smart_fit_spectra_joblib(cube_phys, tmplt, wave=wave, n_jobs=n_jobs, component=0)
+
+# 2. PMF
+print("Fitting reconstructed cube with PMF (with background subtraction)...")
+bg = np.min(cube_phys, axis=0, keepdims=True)
+cube_safe = np.clip(cube_phys - bg, 0.0, None)
+recon_pmf_pix = gauss_pmf_fitter(cube_safe)
+
+recon_pmf = np.zeros_like(recon_pmf_pix)
+recon_pmf[0] = recon_pmf_pix[0] * DISP_SCALE_A
+recon_pmf[1] = recon_pmf_pix[1] * DISP_SCALE_A * SPEED_OF_LIGHT / REST_WAVELENGTH
+recon_pmf[2] = recon_pmf_pix[2] * DISP_SCALE_A
+
+# Print Metrics
+def print_metrics(name, est):
+    rmse, bias = get_metrics(param3dar, est)
+    rmse_w_kms = rmse[2] * SPEED_OF_LIGHT / REST_WAVELENGTH
+    bias_w_kms = bias[2] * SPEED_OF_LIGHT / REST_WAVELENGTH
+    print(f"--- {name} ---")
+    print(f" Int RMSE={rmse[0]:8.2f}, Bias={bias[0]:8.2f}")
+    print(f" Vel RMSE={rmse[1]:8.3f} km/s, Bias={bias[1]:8.3f} km/s")
+    print(f" Wid RMSE={rmse_w_kms:8.3f} km/s, Bias={bias_w_kms:8.3f} km/s")
+
+print_metrics("MPFit", recon_mpfit)
+print_metrics("PMF", recon_pmf)
+
+# Plotting 1: 1D Spectrum Comparison
+y_max, x_max = np.unravel_index(np.argmax(param3dar[0]), param3dar[0].shape)
+
+def gaussian_eval(wave_arr, param, rest_wave):
+    center = rest_wave * (1 + param[1] / SPEED_OF_LIGHT)
+    peak = param[0] / (np.sqrt(2 * np.pi) * param[2])
+    return peak * np.exp(-0.5 * ((wave_arr - center) / param[2])**2)
+    
+plt.figure(figsize=(10, 6))
+plt.plot(wave, true_cube_phys[:, y_max, x_max], 'k.-', label='True Datacube', linewidth=2)
+plt.plot(wave, cube_phys[:, y_max, x_max], 'g.-', label='Reconstructed Datacube (Tomography)', linewidth=2)
+
+plt.plot(wave, gaussian_eval(wave, recon_mpfit[:, y_max, x_max], rest_wave=REST_WAVELENGTH), 'r--', label='MPFit Primary Gaussian', linewidth=2)
+plt.plot(wave, gaussian_eval(wave, recon_pmf[:, y_max, x_max], rest_wave=REST_WAVELENGTH), 'b:', label='PMF Extracted Gaussian', linewidth=2)
+
+plt.title(f'1D Spectrum Comparison at Brightest Pixel (y={y_max}, x={x_max})')
+plt.xlabel('Wavelength [Å]')
+plt.ylabel('Flux Density')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.savefig('test_smart_1d_spectrum.png', dpi=200, bbox_inches='tight')
+plt.show()
+
+# Plotting 2: 2D Parameter Maps
+fig, axes = plt.subplots(3, 3, figsize=(15, 12))
+titles = ['Intensity', 'Velocity', 'Line Width']
+cmaps = ['hot', 'seismic', 'plasma']
+
+vmaxs = [param3dar[0].max(), 10, param3dar[2].max()]
+vmins = [0, -10, param3dar[2].min()]
+
+for i in range(3):
+    # Truth
+    im = axes[0, i].imshow(param3dar[i], cmap=cmaps[i], vmin=vmins[i], vmax=vmaxs[i])
+    axes[0, i].set_title(f'True {titles[i]}')
+    fig.colorbar(im, ax=axes[0, i], fraction=0.8)
+    
+    # MPFit
+    im = axes[1, i].imshow(recon_mpfit[i], cmap=cmaps[i], vmin=vmins[i], vmax=vmaxs[i])
+    axes[1, i].set_title(f'MPFit {titles[i]}')
+    fig.colorbar(im, ax=axes[1, i], fraction=0.8)
+    
+    # PMF
+    im = axes[2, i].imshow(recon_pmf[i], cmap=cmaps[i], vmin=vmins[i], vmax=vmaxs[i])
+    axes[2, i].set_title(f'PMF {titles[i]}')
+    fig.colorbar(im, ax=axes[2, i], fraction=0.8)
+    
+plt.tight_layout()
+plt.savefig('test_smart_2d_maps.png', dpi=200, bbox_inches='tight')
 plt.show()

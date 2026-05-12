@@ -1,6 +1,6 @@
 from slitless.forward import Source, Imager, forward_op, datacube_generator
 from slitless.plotting import uiuc_im
-from slitless.recon import (smart, grad_descent_solver, scipy_solver, scipy_solver_parallel, tomoinv,
+from slitless.recon import (smart, smart2, grad_descent_solver, scipy_solver, scipy_solver_parallel, scipy_solver_parallel2, tomoinv,
     Reconstructor, Reconstructor_Multi, nn_solver, diffusion_solver)
 import numpy as np
 import datetime, pickle, shutil, os
@@ -18,13 +18,14 @@ path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 # data='eis_5_64x64.npy' # 64x64 EIS images
 # data='diff_samples.npy' # 5 of 64x64 Diffusion generated images
 # data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
-data='eis_train_5_dsetv5.npy' # 64x64 EIS images
+data_file='eis_train_5_dsetv5.npy' # 64x64 EIS images
 # data='eis_train_5_dsetv4.npy' # 64x64 EIS images
 # data='eis_test_5_dsetv4.npy' # 64x64 EIS images
 # data='eis_val_5_dsetv4_old.npy' # 64x64 EIS images
 
 # # param4dar = uiuc_im()
-# param4dar = np.load(path_data+data_)[[1]]
+# param4dar = np.load
+# (path_data+data_)[[1]]
 # if len(param4dar.shape)<4:
 #     param4dar = param4dar[np.newaxis]
 # source_pix = True
@@ -32,12 +33,13 @@ data='eis_train_5_dsetv5.npy' # 64x64 EIS images
 # meas4dar=None
 
 # Loading script for dset_v4 data
-data = np.load(path_data+data, allow_pickle=True).item()
+data = np.load(path_data+data_file, allow_pickle=True).item()
 # param4dar, meas4dar = data['param3d'], data['meas']
 # param4dar, meas4dar = data['param3d'], data['meas']
 param4dar, meas4dar = data['param3d'], data['meas_damped']
+# param4dar, meas4dar = data['param3d'][[0]], data['meas_damped'][[0]]
 source_pix = False
-intenscaling = True
+intenscaling = False
 # meas4dar=None
 
 savepath = '/home/kamo/resources/slitless/python/results/recons/'
@@ -51,12 +53,6 @@ noise_model=None # Noise-free measurements
 if meas4dar is not None:
     meas4dar = meas4dar[:,:numdetectors]
 
-def inf_priorer(param4dar):
-    means = []
-    for i in range(len(param4dar)):
-        means.append(datacube_generator(param4dar[i]).mean(axis=(1,2)))
-    return np.array(means).mean(axis=0)
-    
 Imgr = Imager(pixelated=True, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise_model, 
 # Imgr = Imager(pixelated=True, mask=mask, dbsnr=dbsnr, max_count=dbsnr**2/0.9, noise_model=noise_model, 
     spectral_orders=[0,-1,1,-2,2][:numdetectors])
@@ -77,11 +73,34 @@ Imgr = Imager(pixelated=True, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise
 #     intenscaling=intenscaling,
 #     DATA_FIDELITY='L2',
 #     OPTIMIZER='L-BFGS-B',
-#     # OPTIMIZER='Nelder-Mead',
 #     maxiter=10000,
-#     lam_i=1e-8,
-#     lam_v=0.01,
-#     lam_w=10
+#     lam_i=1e-4,
+#     lam_v=1.5e4,
+#     lam_w=2e9
+# )
+
+# # SCIPY
+# Rec = Reconstructor_Multi(
+#     imager=Imgr,
+#     param4dar=param4dar,
+#     meas4dar=meas4dar,
+#     pix=source_pix,
+#     solver=scipy_solver_parallel2,
+#     intenscaling=intenscaling,
+#     DATA_FIDELITY='L2',
+#     OPTIMIZER='L-BFGS-B',
+#     maxiter=10000,
+#     lam_i=1e-4,
+#     lam_v=5e5,
+#     lam_w=1e6,
+#     frac1=0.8620,
+#     frac2=0.0521,
+#     frac_bg=0.0860,
+#     cent1=195.11723,
+#     wid1=0.02981,
+#     cent2=195.17723,
+#     wid2=0.02981,
+#     bg_shape_norm=[0.04762] * 21
 # )
 
 # Tomoinv
@@ -144,36 +163,43 @@ Rec = Reconstructor_Multi(
     meas4dar=meas4dar,
     param4dar=param4dar,
     pix=source_pix,
-    solver=smart,
+    solver=smart2,
     fitter='mpfit',
     intenscaling=intenscaling,
     psi=0.2,
     maxouter=5,
     maxinner=20,
-    inf_prior_width=1.38
-    # inf_prior_width=None
+    live_plot=True,
+    prior_weight=0.3,
+    cent1=-1.13*(195.11794/299792.458)+195.11803,
+    wid1=42.74*(195.11794/299792.458),
+    wid2=42.74*(195.11794/299792.458)
 )
 
 recons = Rec.solve(num_realizations=1)
 # Rec.recons[0].plot_loss()
 fig, ax = recons[0].plot(compare=True, title=f'{Rec.solver.__name__}')
+fig, ax = recons[1].plot(compare=True, title=f'{Rec.solver.__name__}')
+fig, ax = recons[2].plot(compare=True, title=f'{Rec.solver.__name__}')
+fig, ax = recons[3].plot(compare=True, title=f'{Rec.solver.__name__}')
+fig, ax = recons[4].plot(compare=True, title=f'{Rec.solver.__name__}')
 # print('mask: {}'.format(mask[:2,:2]))
 print('Solver: {}'.format(Rec.solver.__name__))
 print('Solver Params: {}'.format(Rec.solver_params))
 print('Recon Time Avg: {:.2f} s'.format(Rec.times.mean()))
-print('RMSE_phy Avg (per Img): {}'.format(Rec.rmse_phy.mean(axis=1)))
+# print('RMSE_phy Avg (per Img): {}'.format(Rec.rmse_phy.mean(axis=1)))
 print('RMSE_phy Avg: {}'.format(Rec.rmse_phy.mean(axis=(0,1))))
 print('MAE_phy Avg: {}'.format(Rec.mae_phy.mean(axis=(0,1))))
-print('Bias_phy Avg (per Img): {}'.format(Rec.bias_phy.mean(axis=1)))
+# print('Bias_phy Avg (per Img): {}'.format(Rec.bias_phy.mean(axis=1)))
 print('Bias_phy Avg: {}'.format(Rec.bias_phy.mean(axis=(0,1))))
-print('RMSE_pix Avg (per Img): {}'.format(Rec.rmse_pix.mean(axis=1)))
-print('RMSE_pix Avg: {}'.format(Rec.rmse_pix.mean(axis=(0,1))))
+# print('RMSE_pix Avg (per Img): {}'.format(Rec.rmse_pix.mean(axis=1)))
+# print('RMSE_pix Avg: {}'.format(Rec.rmse_pix.mean(axis=(0,1))))
 # print('SSIMs: {}'.format(recons.ssim))
 # print('SSIM Avg: {}'.format(recons.ssim.mean(axis=0)))
 
 if save==True:
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-    name = (f'{now}_{Rec.solver.__name__}_{data[:-4]}_K_{numdetectors}_{noise_model}_dbsnr_{dbsnr}')
+    name = (f'{now}_{Rec.solver.__name__}_{data_file[:-4]}_K_{numdetectors}_{noise_model}_dbsnr_{dbsnr}')
     savedir = savepath+name
     os.mkdir(savedir)
     recon_summary = [

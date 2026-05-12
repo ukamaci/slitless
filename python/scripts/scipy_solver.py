@@ -95,7 +95,7 @@ vel_er = vel_phy_r - vel_phy
 vel_er_n = vel_er/(vel_phy+1e0)*100
 width_er = width_phy_r - width_phy
 width_er_n = width_er/width_phy*100
-width_er = width_er/sr_r.wavelength*300000
+width_er = width_er / sr_r.rest_wavelength * 299792.458
 
 print('Intensity RMS Error = {:.2f} erg/cm2.s.sr'.format(np.sqrt(np.mean(int_er**2))))
 print('Doppler Velocity RMS Error = {:.2f} km/s'.format(np.sqrt(np.mean(vel_er**2))))

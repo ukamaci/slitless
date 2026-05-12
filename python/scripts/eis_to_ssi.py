@@ -47,11 +47,11 @@ if __name__ == '__main__':
 
         lamdim = 21
         dc_gauss = datacube_generator(srpix.param3d, lamdim=lamdim, pixelated=False)
-        dc_gauss /= im.dispersion_scale/1000
+        dc_gauss /= im.dispersion_scale
         
         wavelength_grid_target = (
-            sr.wavelength + 
-            im.dispersion_scale/1000 * (np.arange(lamdim)-lamdim//2)
+            im.mid_wavelength + 
+            im.dispersion_scale * (np.arange(lamdim)-lamdim//2)
         )
 
         wavelength_grid_source = data_cube.wavelength
