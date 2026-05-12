@@ -715,25 +715,6 @@ def smart2(
     k0 = np.array([0.25, 0.5, 0.25])
     k1 = np.outer(k0,k0)
     kernel = k0[None,None] * k1[:,:,None]
-    # k_lam = np.array([0.0, 1.0, 0.0]) # Disable spectral smoothing
-    # k1 = np.outer(k_lam, k0)          # Lambda and Y axes
-    # kernel = k0[None,None,:] * k1[:,:,None] # X axis
-
-    if live_plot:
-        plt.ion()
-        spatial_idx = N // 2
-        fig_live, axes_live = plt.subplots(nrows=1, ncols=num_projs + 1, figsize=(4 * (num_projs + 1), 4))
-        im_cube = axes_live[0].imshow(cube[:, :, spatial_idx].T, cmap='nipy_spectral')
-        axes_live[0].set_title('Iter 0,0: Recon')
-        fig_live.colorbar(im_cube, ax=axes_live[0], fraction=0.046, pad=0.04)
-        im_cors = []
-        for k in range(num_projs):
-            im_cor = axes_live[k+1].imshow(np.ones((L, M)).T, cmap='RdBu_r', vmin=0.8, vmax=1.2)
-            axes_live[k+1].set_title(f'Proj {k} Cor')
-            fig_live.colorbar(im_cor, ax=axes_live[k+1], fraction=0.046, pad=0.04)
-            im_cors.append(im_cor)
-        plt.tight_layout()
-        plt.show(block=False)
 
     for i in range(maxouter):
         print('Outer Iter: {}/{}'.format(i+1,maxouter))
@@ -780,15 +761,6 @@ def smart2(
             Cor = np.stack(Cor_list, axis=0)
             Corr = np.prod(Cor[unconverged], axis=0) ** (1.0 / max(active_count, 1.0))
             cube *= Corr
-            
-            if live_plot:
-                axes_live[0].set_title(f'Iter {i},{j}: Recon')
-                im_cube.set_data(cube[:, :, spatial_idx].T)
-                im_cube.set_clim(vmin=cube[:, :, spatial_idx].min(), vmax=cube[:, :, spatial_idx].max())
-                for k in range(num_projs):
-                    im_cors[k].set_data(Cor_list[k][:, :, spatial_idx].T)
-                fig_live.canvas.draw_idle()
-                plt.pause(0.01)
                 
         print(f'chi:{np.mean(chi)}')
         
