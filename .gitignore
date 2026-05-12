@@ -23,3 +23,6 @@
 *.egg
 dist/
 build/
+.env
+.env.*
+.envrc
