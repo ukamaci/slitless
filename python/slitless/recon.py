@@ -30,7 +30,7 @@ class Reconstructor():
         self.intenscale = intenscale
         self.solver_params = solver_params
         self.simulate_meas = simulate_meas
-        self.tomo=True if self.solver=='smart' else False
+        self.tomo = True if hasattr(self.solver, '__name__') and self.solver.__name__ in ['smart', 'smart2', 'tomoinv'] else False
 
     def solve(
         self,
@@ -403,7 +403,8 @@ def smart_fit_spectra_joblib(cube, tmplt, wave, errs=None, n_jobs=-1, component=
     intensity = np.sqrt(2 * np.pi) * raw_peak * raw_width
     rest_wave = p_base[idx_cent]['value'] 
     
-    velocity = calc_velocity(raw_cent, rest_wave)
+    # Calculate absolute velocity to bypass eispac's orbital thermal drift correction
+    velocity = 299792.458 * (raw_cent - rest_wave) / rest_wave
 
     bad_mask = (full_status <= 0)
     intensity[bad_mask] = 0
@@ -568,16 +569,23 @@ def smart(
             template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
             tmplt = eispac.read_template(template_filepath)
         lamdim = cube.shape[0]
+        
+        wave_cen = imager.mid_wavelength if imager is not None else 195.119
+        disp_scale = imager.dispersion_scale if imager is not None else 0.022275
+        
         # Construct the wavelength grid assuming pixel units center around lamdim//2
-        wave = imager.srpix.wavelength + (imager.dispersion_scale / 1000) * (np.arange(lamdim) - lamdim // 2)
-        cube = cube / (imager.dispersion_scale / 1000) * imager.intenscale
+        wave = wave_cen + disp_scale * (np.arange(lamdim) - lamdim // 2)
+        cube = cube / disp_scale * imager.intenscale
         
         recon = smart_fit_spectra_joblib(cube, tmplt, wave=wave, n_jobs=n_jobs)
         
         # convert physical units (km/s, Angstroms) back to pixel units to match original format
+        SPEED_OF_LIGHT = 299792.458
         recon[0] /= imager.intenscale
-        recon[1] = recon[1] * (imager.srpix.wavelength / 300 / imager.dispersion_scale)
-        recon[2] = recon[2] / (imager.dispersion_scale / 1000)
+        rest_wave = tmplt.parinfo[1]['value']
+        actual_wave = rest_wave * (1 + recon[1] / SPEED_OF_LIGHT)
+        recon[1] = (actual_wave - wave_cen) / disp_scale
+        recon[2] = recon[2] / disp_scale
     elif fitter=='pmf':
         recon = gauss_pmf_fitter(cube)
 
@@ -587,56 +595,150 @@ def smart(
     
     return recon , cube
 
+def prior_solver(
+    meas=None,
+    imager=None,
+    frac1=0.8620,
+    cent1=-0.95*(195.11723/299792.458)+195.11723,
+    wid1=1.28*0.022275,
+    **kwargs
+):
+    if imager is not None:
+        meas = imager.meas3dar.copy()
+        
+    int0 = meas[0].copy()
+    
+    if imager is not None:
+        mid_wave = imager.mid_wavelength
+        disp_scale = imager.dispersion_scale
+    else:
+        mid_wave = 195.119
+        disp_scale = 0.022275
+        
+    vel1_pix_0 = (cent1 - mid_wave) / disp_scale
+    wid1_pix_0 = wid1 / disp_scale
+    
+    recon_int = int0 * frac1
+    recon_vel = vel1_pix_0 * np.ones_like(int0)
+    recon_wid = wid1_pix_0 * np.ones_like(int0)
+    
+    recon = np.stack((recon_int, recon_vel, recon_wid), axis=0)
+    
+    return recon, []
+
 def smart2(
         meas=None,
         imager=None,
         psi=0.2,
         maxouter=5,
         maxinner=20,
-        inf_prior_width=1.38,
-        fitter='pmf',
+        prior_weight=1.0,
+        fitter='mpfit',
         tmplt=None,
-        n_jobs=-1
+        n_jobs=-1,
+        frac1=0.8555,
+        frac2=0.0521,
+        frac_bg=0.0924,
+        cent1=195.11803,
+        wid1=0.02907,
+        cent2=195.17803,
+        wid2=0.02907,
+        bg_shape_norm=[0.04762] * 21,
+        live_plot=False
 ):
     if imager is not None:
         meas = imager.meas3dar.copy()
     NK, M, N = meas.shape
     L = 21
 
+    if tmplt is None and fitter == 'mpfit':
+        template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
+        import os
+        if os.path.exists(template_filepath):
+            import eispac
+            tmplt = eispac.read_template(template_filepath)
+
     orders = imager.spectral_orders
-    inf = True if inf_prior_width is not None else False
-    orders_list = orders + ['inf'] if inf else orders
+    orders_list = orders + ['inf']
 
     meas_list = [meas[k] for k in range(NK)]
-    if inf:
-        infprior = gauss_pix(np.outer(np.arange(L), np.ones(N)), L//2, inf_prior_width)
-        infprior = infprior / infprior.sum(axis=0) * meas[0].sum(axis=0)
-        meas_list.append(infprior)
+    
+    int0 = meas[0].copy()
+    
+    if imager is not None:
+        mid_wave = imager.mid_wavelength
+        disp_scale = imager.dispersion_scale
+    else:
+        mid_wave = 195.119
+        disp_scale = 0.022275
+        
+    vel1_pix_0 = (cent1 - mid_wave) / disp_scale
+    wid1_pix_0 = wid1 / disp_scale
+    
+    vel2_pix_0 = (cent2 - mid_wave) / disp_scale
+    wid2_pix_0 = wid2 / disp_scale
+
+    v1_0 = vel1_pix_0 * np.ones_like(int0)
+    w1_0 = wid1_pix_0 * np.ones_like(int0)
+    cube1 = datacube_generator(np.stack((int0 * frac1, v1_0, w1_0), axis=0), lamdim=L)
+
+    v2_0 = vel2_pix_0 * np.ones_like(int0)
+    w2_0 = wid2_pix_0 * np.ones_like(int0)
+    cube2 = datacube_generator(np.stack((int0 * frac2, v2_0, w2_0), axis=0), lamdim=L)
+    
+    if bg_shape_norm is None:
+        bg_shape_norm = np.ones(L) / L
+    bg_cube = np.array(bg_shape_norm)[:, np.newaxis, np.newaxis] * (int0 * frac_bg)[np.newaxis, :, :]
+
+    cube = cube1 + cube2 + bg_cube
+
+    infprior = np.sum(cube, axis=1)
+    infprior = infprior / np.clip(infprior.sum(axis=0), 1e-12, None) * meas[0].sum(axis=0)
+    meas_list.append(infprior)
 
     num_projs = len(meas_list)
+    
+    weights = np.ones(num_projs)
+    weights[-1] = prior_weight
 
     mtx_list = []
     for order in orders_list:
         mtx_list.append(tomomtx_gen((L, M), orders=[order]))
 
+    mapped_list = []
     mtx_s_list = []
     for k in range(num_projs):
         mapped = mtx_list[k].T @ np.ones((mtx_list[k].shape[0], 1))
-        mtx_s_list.append((mapped < 0.01).flatten())
+        mapped_list.append(mapped)
+        mtx_s_list.append((mapped < 0.99).flatten())
 
-    int0 = meas[0].copy()
-    vel0 = np.zeros_like(int0)
-    width0 = 1.38*np.ones_like(int0)
-    cube = datacube_generator(np.stack((int0,vel0,width0),axis=0), lamdim=L)
-    
     k0 = np.array([0.25, 0.5, 0.25])
     k1 = np.outer(k0,k0)
     kernel = k0[None,None] * k1[:,:,None]
+    # k_lam = np.array([0.0, 1.0, 0.0]) # Disable spectral smoothing
+    # k1 = np.outer(k_lam, k0)          # Lambda and Y axes
+    # kernel = k0[None,None,:] * k1[:,:,None] # X axis
+
+    if live_plot:
+        plt.ion()
+        spatial_idx = N // 2
+        fig_live, axes_live = plt.subplots(nrows=1, ncols=num_projs + 1, figsize=(4 * (num_projs + 1), 4))
+        im_cube = axes_live[0].imshow(cube[:, :, spatial_idx].T, cmap='nipy_spectral')
+        axes_live[0].set_title('Iter 0,0: Recon')
+        fig_live.colorbar(im_cube, ax=axes_live[0], fraction=0.046, pad=0.04)
+        im_cors = []
+        for k in range(num_projs):
+            im_cor = axes_live[k+1].imshow(np.ones((L, M)).T, cmap='RdBu_r', vmin=0.8, vmax=1.2)
+            axes_live[k+1].set_title(f'Proj {k} Cor')
+            fig_live.colorbar(im_cor, ax=axes_live[k+1], fraction=0.046, pad=0.04)
+            im_cors.append(im_cor)
+        plt.tight_layout()
+        plt.show(block=False)
 
     for i in range(maxouter):
         print('Outer Iter: {}/{}'.format(i+1,maxouter))
         cube = (cube + cube**(1+psi))*np.sum(cube)/np.sum(cube + cube**(1+psi))
-        cube = convolve(cube, kernel, mode='nearest')
+        cube = convolve(cube, kernel, mode='reflect')
         for j in range(maxinner):
             cube_flat = cube.reshape(L*M, N)
             
@@ -653,40 +755,67 @@ def smart2(
                 continue
             
             Cor_list = []
-            active_count = np.zeros((L, M, N))
+            active_count = 0.0
+                
             for k in range(num_projs):
-                cor_k = (meas_list[k]/(meas2_list[k]+1e-5))**(2/3)
-                Cor_k_flat = mtx_list[k].T @ cor_k
-                Cor_k_flat[mtx_s_list[k], :] = 1.0
-                Cor_list.append(Cor_k_flat.reshape(L, M, N))
+                # cor_k = (meas_list[k]/(meas2_list[k]+1e-5))**(2/(num_projs))
+                cor_k = meas_list[k]/(meas2_list[k]+1e-2)
+                
+                Cor_k_flat = (mtx_list[k].T @ cor_k) / (mapped_list[k] + 1e-2)
+                Cor_k = Cor_k_flat.reshape(L, M, N)
+                
+                missing_mask = mtx_s_list[k].reshape(L, M, 1)
+                
+                # Core-Copy Boundary Condition: Ensure uniform spectral shape scaling
+                fallback = Cor_k[L//2, :, :][None, :, :]
+                Cor_k = np.where(missing_mask, fallback, Cor_k)
+                
+                # Apply the voting weight
+                Cor_k = Cor_k ** weights[k]
+                Cor_list.append(Cor_k)
+                
                 if unconverged[k]:
-                    active_mask = (1.0 - mtx_s_list[k].astype(float)).reshape(L, M, 1)
-                    active_count += active_mask
+                    active_count += weights[k]
             
             Cor = np.stack(Cor_list, axis=0)
-            Corr = np.prod(Cor[unconverged], axis=0) ** (1.0 / np.maximum(active_count, 1.0))
+            Corr = np.prod(Cor[unconverged], axis=0) ** (1.0 / max(active_count, 1.0))
             cube *= Corr
+            
+            if live_plot:
+                axes_live[0].set_title(f'Iter {i},{j}: Recon')
+                im_cube.set_data(cube[:, :, spatial_idx].T)
+                im_cube.set_clim(vmin=cube[:, :, spatial_idx].min(), vmax=cube[:, :, spatial_idx].max())
+                for k in range(num_projs):
+                    im_cors[k].set_data(Cor_list[k][:, :, spatial_idx].T)
+                fig_live.canvas.draw_idle()
+                plt.pause(0.01)
+                
         print(f'chi:{np.mean(chi)}')
+        
+    if live_plot:
+        plt.ioff()
     
     if fitter=='mpfit':
-        if tmplt is None:
-            template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
-            tmplt = eispac.read_template(template_filepath)
-        lamdim = cube.shape[0]
-        # Construct the wavelength grid assuming pixel units center around lamdim//2
-        wave = imager.srpix.wavelength + (imager.dispersion_scale / 1000) * (np.arange(lamdim) - lamdim // 2)
-        cube = cube / (imager.dispersion_scale / 1000) * imager.intenscale
+        wave_cen = imager.mid_wavelength if imager is not None else 195.119
+        disp_scale = imager.dispersion_scale if imager is not None else 0.022275
+        wave = wave_cen + disp_scale * (np.arange(L) - L // 2)
+        cube = cube / disp_scale * imager.intenscale
         
         recon = smart_fit_spectra_joblib(cube, tmplt, wave=wave, n_jobs=n_jobs)
         
         # convert physical units (km/s, Angstroms) back to pixel units to match original format
+        SPEED_OF_LIGHT = 299792.458
         recon[0] /= imager.intenscale
-        recon[1] = recon[1] * (imager.srpix.wavelength / 300 / imager.dispersion_scale)
-        recon[2] = recon[2] / (imager.dispersion_scale / 1000)
+        rest_wave = tmplt.parinfo[1]['value']
+        actual_wave = rest_wave * (1 + recon[1] / SPEED_OF_LIGHT)
+        recon[1] = (actual_wave - wave_cen) / disp_scale
+        recon[2] = recon[2] / disp_scale
     elif fitter=='pmf':
-        recon = gauss_pmf_fitter(cube)
+        bg = np.min(cube, axis=0, keepdims=True)
+        cube_safe = np.clip(cube - bg, 0.0, None)
+        recon = gauss_pmf_fitter2(cube_safe)
 
-    return recon , cube
+    return recon , cube * disp_scale
 
 def grad_descent_solver(
     imager=None,
@@ -718,9 +847,23 @@ def grad_descent_solver(
 
     xh_int = copy.deepcopy(meas[...,0,:,:])
     xh_int = xh_int.requires_grad_()
-    xh_vel = torch.zeros_like(
-        xh_int, device=device, dtype=torch.float, requires_grad=True)
-    xh_width = 1.38*torch.ones_like(xh_int, device=device, dtype=torch.float)
+    
+    if imager is not None:
+        rest_wave = imager.srpix.rest_wavelength if hasattr(imager, 'srpix') else 195.117937907451
+        mid_wave = imager.mid_wavelength
+        disp_scale = imager.dispersion_scale
+    else:
+        rest_wave = 195.117937907451
+        mid_wave = 195.119
+        disp_scale = 0.022275
+        
+    vel_pix_0 = (rest_wave - mid_wave) / disp_scale
+    width_pix_0 = 0.02888811 / disp_scale
+    
+    xh_vel = vel_pix_0 * torch.ones_like(
+        xh_int, device=device, dtype=torch.float)
+    xh_vel = xh_vel.requires_grad_()
+    xh_width = width_pix_0 * torch.ones_like(xh_int, device=device, dtype=torch.float)
     xh_width = xh_width.requires_grad_()
 
     if OPTIMIZER.upper() == 'ADAM':
@@ -811,8 +954,21 @@ def scipy_solver(
     aa, bb = meas[0].shape
 
     int0 = meas[0].copy()
-    vel0 = np.zeros_like(int0)
-    width0 = 1.38*np.ones_like(int0)
+    
+    if imager is not None:
+        rest_wave = imager.srpix.rest_wavelength if hasattr(imager, 'srpix') else 195.117937907451
+        mid_wave = imager.mid_wavelength
+        disp_scale = imager.dispersion_scale
+    else:
+        rest_wave = 195.117937907451
+        mid_wave = 195.119
+        disp_scale = 0.022275
+        
+    vel_pix_0 = (rest_wave - mid_wave) / disp_scale
+    width_pix_0 = 0.02888811 / disp_scale
+    
+    vel0 = vel_pix_0 * np.ones_like(int0)
+    width0 = width_pix_0 * np.ones_like(int0)
     x0 = np.stack((int0, vel0, width0), axis=0).flatten()
 
     rec = np.zeros((3,aa,bb))
@@ -832,13 +988,17 @@ def scipy_solver(
 
 def _worker_scipy_col(x0, meas_slice, mask_slice, lam_i, lam_v, lam_w, 
                       pixelated, spectral_orders, OPTIMIZER, maxiter, DATA_FIDELITY):
-    
+
     def obj_ls_local(x, meas, mask, lam_i, lam_v, lam_w):
         aa, bb = meas.shape[1:]
+        
         intensity, doppler, linewidth = np.reshape(x, (3,aa,bb))
-        diff = forward_op(intensity, doppler, linewidth,
+            
+        proj_gauss = forward_op(intensity, doppler, linewidth,
             pixelated=pixelated, mask=mask,
-            spectral_orders=spectral_orders) - meas
+            spectral_orders=spectral_orders)
+        
+        diff = proj_gauss - meas
         
         regu = (
             lam_v*np.sum(np.diff(doppler, axis=0)**2) + 
@@ -878,22 +1038,28 @@ def scipy_solver_parallel(
     aa, bb = meas[0].shape
 
     int0 = meas[0].copy()
-    vel0 = np.zeros_like(int0)
-    width0 = 1.38*np.ones_like(int0)
+
+    if imager is not None:
+        rest_wave = imager.srpix.rest_wavelength if hasattr(imager, 'srpix') else 195.117937907451
+        mid_wave = imager.mid_wavelength
+        disp_scale = imager.dispersion_scale
+    else:
+        rest_wave = 195.117937907451
+        mid_wave = 195.119
+        disp_scale = 0.022275
+        
+    vel_pix_0 = (rest_wave - mid_wave) / disp_scale
+    width_pix_0 = 0.02888811 / disp_scale
+
+    vel0 = vel_pix_0 * np.ones_like(int0)
+    width0 = width_pix_0 * np.ones_like(int0)
     
     tasks = []
     for i in range(bb):
-        x0 = np.stack( ( int0[:,i], vel0[:,i], width0[:,i] ), axis=0 ).flatten()
+        x0 = np.stack((int0[:,i], vel0[:,i], width0[:,i]), axis=0).flatten()
         tasks.append((
-            x0, 
-            meas[:,:,[i]], 
-            mask[:,[i]], 
-            lam_i, lam_v, lam_w,
-            imager.pixelated,
-            imager.spectral_orders,
-            OPTIMIZER,
-            maxiter,
-            DATA_FIDELITY
+            x0, meas[:,:,[i]], mask[:,[i]], lam_i, lam_v, lam_w,
+            imager.pixelated, imager.spectral_orders, OPTIMIZER, maxiter, DATA_FIDELITY
         ))
 
     results = Parallel(n_jobs=n_jobs, verbose=10)(
@@ -903,6 +1069,137 @@ def scipy_solver_parallel(
     rec = np.zeros((3,aa,bb))
     for i, res_x in enumerate(results):
         rec[:,:,i] = res_x.reshape(3,aa)
+
+    losses = []
+    return rec, losses
+
+def _worker_scipy_col2(x0, meas_slice, mask_slice, lam_i, lam_v, lam_w, 
+                       pixelated, spectral_orders, OPTIMIZER, maxiter, DATA_FIDELITY,
+                       bg_proj_matrix, ratio_i2, ratio_bkg):
+
+    def obj_ls_local(x, meas, mask, lam_i, lam_v, lam_w):
+        aa, bb = meas.shape[1:]
+        
+        int1, vel1, wid1, int2, vel2, wid2, bkg = np.reshape(x, (7,aa,bb))
+            
+        proj1 = forward_op(int1, vel1, wid1,
+            pixelated=pixelated, mask=mask,
+            spectral_orders=spectral_orders)
+            
+        proj2 = forward_op(int2, vel2, wid2,
+            pixelated=pixelated, mask=mask,
+            spectral_orders=spectral_orders)
+        
+        # Mask the background parameter before projecting to respect valid spatial bounds
+        proj_bg = np.einsum('oij,jk->oik', bg_proj_matrix, bkg * mask)
+        
+        diff = (proj1 + proj2 + proj_bg) - meas
+        
+        regu = (
+            lam_v*np.sum(np.diff(vel1, axis=0)**2) + 
+            lam_w*np.sum(np.diff(wid1, axis=0)**2) +
+            lam_i*np.sum(np.diff(int1, axis=0)**2) +
+            
+            lam_v*np.sum(np.diff(vel2, axis=0)**2) + 
+            lam_w*np.sum(np.diff(wid2, axis=0)**2) +
+            (lam_i * ratio_i2)*np.sum(np.diff(int2, axis=0)**2) +
+            
+            (lam_i * ratio_bkg)*np.sum(np.diff(bkg, axis=0)**2)
+        )
+
+        if DATA_FIDELITY == 'L2':
+            return np.sum(diff**2) + regu
+        elif DATA_FIDELITY == 'L1':
+            return np.sum(abs(diff)) + regu
+
+    res = minimize(
+        obj_ls_local, 
+        x0, 
+        args=(meas_slice, mask_slice, lam_i, lam_v, lam_w), 
+        method=OPTIMIZER,
+        options={'disp':False, 'maxiter':maxiter}
+    )
+    return res.x
+
+def scipy_solver_parallel2(
+    imager=None,
+    OPTIMIZER='L-BFGS-B',
+    DATA_FIDELITY='L2', 
+    lam_i=5e2, 
+    lam_v=5e2, 
+    lam_w=1e0, 
+    maxiter=10000,
+    n_jobs=-1,
+    frac1=0.75,
+    frac2=0.10,
+    frac_bg=0.15,
+    cent1=195.118,
+    wid1=0.029,
+    cent2=195.180,
+    wid2=0.030,
+    bg_shape_norm=None
+    ):
+
+    meas = imager.meas3dar.copy()
+    mask = imager.mask
+    if mask is None:
+        mask = np.ones_like(meas[0])
+    aa, bb = meas[0].shape
+
+    rest_wave = imager.srpix.rest_wavelength if hasattr(imager, 'srpix') else 195.117937907451
+    mid_wave = imager.mid_wavelength if imager is not None else 195.119
+    disp_scale = imager.dispersion_scale if imager is not None else 0.022275
+    
+    if bg_shape_norm is None:
+        # Fallback to a flat continuum if no optimal shape is provided
+        bg_shape_norm = np.ones(21) / 21.0
+    else:
+        bg_shape_norm = np.array(bg_shape_norm)
+    
+    I = np.eye(aa)
+    bg_cube = bg_shape_norm[:, np.newaxis, np.newaxis] * I[np.newaxis, :, :]
+    bg_proj_matrix = forward_op_tomo_3d(bg_cube, orders=imager.spectral_orders)
+    
+    # Scale intensity regularizations dynamically to keep optimization well-conditioned
+    ratio_i2 = (frac1 / max(frac2, 1e-6))**2
+    ratio_bkg = (frac1 / max(frac_bg, 1e-6))**2 * 100.0 # Extra strong spatial lock for bkg
+    
+    int0 = meas[0].copy()
+    int1_0 = int0 * frac1
+    int2_0 = int0 * frac2
+    bkg_0  = int0 * frac_bg
+    
+    vel1_pix_0 = (cent1 - mid_wave) / disp_scale
+    wid1_pix_0 = wid1 / disp_scale
+    
+    vel2_pix_0 = (cent2 - mid_wave) / disp_scale
+    wid2_pix_0 = wid2 / disp_scale
+    
+    v1_0 = vel1_pix_0 * np.ones_like(int0)
+    w1_0 = wid1_pix_0 * np.ones_like(int0)
+    
+    v2_0 = vel2_pix_0 * np.ones_like(int0)
+    w2_0 = wid2_pix_0 * np.ones_like(int0)
+
+    tasks = []
+    for i in range(bb):
+        x0 = np.stack((int1_0[:,i], v1_0[:,i], w1_0[:,i],
+                       int2_0[:,i], v2_0[:,i], w2_0[:,i],
+                       bkg_0[:,i]), axis=0).flatten()
+        tasks.append((
+            x0, meas[:,:,[i]], mask[:,[i]], lam_i, lam_v, lam_w,
+            imager.pixelated, imager.spectral_orders, OPTIMIZER, maxiter, DATA_FIDELITY,
+            bg_proj_matrix, ratio_i2, ratio_bkg
+        ))
+
+    results = Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(_worker_scipy_col2)(*t) for t in tasks
+    )
+    
+    # Return only the primary Gaussian parameters (int1, vel1, width1)
+    rec = np.zeros((3,aa,bb))
+    for i, res_x in enumerate(results):
+        rec[:,:,i] = res_x.reshape(7,aa)[:3, :]
 
     losses = []
     return rec, losses
