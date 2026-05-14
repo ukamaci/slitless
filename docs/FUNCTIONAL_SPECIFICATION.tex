@@ -1,0 +1,788 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{tocloft}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+\title{Slitless Spectral Imaging \\ Functional Requirement Specification}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+\newpage
+
+% ======================================================================
+\section{Domain Model}
+% ======================================================================
+
+\subsection{Fundamental Quantities}
+The system models a spectroscopic imaging problem. At each spatial location (row, column) in a 2D field of view, three scalar values describe the state:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Physical Unit} & \textbf{Pixel Unit} & \textbf{Description} \\
+\midrule
+Intensity & raw counts (or erg/cm\textsuperscript{2}/s/sr) & dimensionless (or scaled counts) & Emitted brightness \\
+Velocity  & km/s           & pixels of shift  & Line-of-sight Doppler shift \\
+Line width & \AA{}        & pixels of width  & Spectral line broadening \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Source Entity}
+A \textbf{Source} is an aggregate of three equal-size 2D arrays (intensity, velocity, linewidth), a rest wavelength (\AA), and a unit-system flag (physical or pixel).
+
+A Source supports:
+\begin{itemize}[nosep]
+  \item Construction from separate 2D arrays or from a 3-channel stacked array
+  \item Construction from an existing 3-channel array (param3d)
+  \item Visualization: 3-panel color image (hot/seismic/plasma colormaps) with optional SSIM/RMSE/PSNR annotations in the title
+\end{itemize}
+
+\subsection{Instrument (Imager) Entity}
+An \textbf{Imager} describes the measurement hardware with:
+\begin{itemize}[nosep]
+  \item Pixel size (\textmu m)
+  \item Dispersion (\textmu m/m\AA) or equivalently dispersion scale (m\AA/pixel or \AA/pixel) --- the two are reciprocally related
+  \item Mid-wavelength (\AA) --- central wavelength of the detector array
+  \item Spectral orders --- list of integers representing which diffraction orders are measured (default $[0, -1, 1]$)
+  \item Pixelated flag --- whether the forward model integrates Gaussians over pixel widths (True) or samples at midpoints (False)
+  \item Spatial mask --- 2D binary array of active/unmasked detector pixels
+  \item Noise model parameters (SNR, max count, avg count, noise model type)
+  \item Intensity scale factor for numerical conditioning
+\end{itemize}
+
+\subsection{Unit Conversion}
+Physical-to-pixel and pixel-to-physical conversion uses:
+\begin{itemize}[nosep]
+  \item \textbf{Doppler formula}: $\text{observed\_wavelength} = \text{rest\_wavelength} \times (1 + \text{velocity} / c)$
+  \item \textbf{Speed of light} $c = 299{,}792.458$ km/s
+  \item \textbf{Pixel shift}: $(\text{observed\_wavelength} - \text{mid\_wavelength}) / \text{dispersion\_scale}$
+  \item \textbf{Line width}: multiply or divide by dispersion\_scale
+  \item \textbf{Width to km/s}: multiply by $c\;/\;\text{rest\_wavelength}$
+  \item \textbf{Intensity scaling}: multiply or divide by intensity scale factor
+\end{itemize}
+Conversions operate on full 3-channel parameter arrays or on Source objects.
+
+% ======================================================================
+\section{Forward Measurement Model}
+% ======================================================================
+
+\subsection{Gaussian Line Profile Functions}
+Two evaluation modes for a Gaussian spectral line:
+
+\begin{itemize}[nosep]
+  \item \textbf{Continuous}: $G(x) = \frac{1}{\sigma\sqrt{2\pi}} \exp\!\left(-\frac12\big(\frac{x-\mu}{\sigma}\big)^2\right)$ --- evaluated at pixel midpoints
+  \item \textbf{Pixelated}: $G_{\text{pix}}(x) = \frac12\Big[\operatorname{erf}\!\big(\frac{x-\mu+0.5}{\sqrt{2}\,\sigma}\big) - \operatorname{erf}\!\big(\frac{x-\mu-0.5}{\sqrt{2}\,\sigma}\big)\Big]$ --- integral over one pixel width
+\end{itemize}
+Both are available in array-compute and differentiable (autodiff-compatible) forms.
+
+\subsection{Spectral Forward Model (2D)}
+Given three 2D arrays (intensity, velocity\textsubscript{pixels}, linewidth\textsubscript{pixels}) and a list of spectral orders:
+
+\begin{itemize}[nosep]
+  \item \textbf{Order 0}: output = intensity $\times$ mask (direct mapping, no dispersion)
+  \item \textbf{Non-zero order $k$}: each spatial pixel emits a Gaussian line centered at $k \times \text{velocity}$ with width $|k| \times \text{linewidth}$. The measurement at each detector row is the sum of contributions from all spatial pixels, weighted by their intensity:
+  \[
+  \text{measurement}[\text{order}_k, \text{row}, \text{col}] = \sum_{\text{src\_row}} \text{mask}[\text{src\_row},\text{col}] \times \text{intensity}[\text{src\_row},\text{col}] \times G(\text{row},\; k\!\times\!\text{velocity}[\text{src\_row},\text{col}],\; |k|\!\times\!\text{linewidth}[\text{src\_row},\text{col}])
+  \]
+\end{itemize}
+Supports batch processing (3D input with leading batch dimension).
+
+\subsection{Tomographic (Data Cube) Forward Model}
+Given a 3D spectral data cube of shape $(\lambda_{\text{dim}}, H, W)$ and a set of orders:
+
+\begin{itemize}[nosep]
+  \item \textbf{Order 0}: sum the cube along the spectral axis
+  \item \textbf{Non-zero order $k$}: shear each spectral slice (at index $\lambda$) by $k \times (\lambda - \lambda_{\text{center}})$ along the spatial (row) axis, then sum along the spectral axis. The shear uses periodic boundary conditions.
+  \item \textbf{Special order ``inf''}: sum along the spatial (row) axis instead, producing a spectral-only projection.
+  \item \textbf{Even orders ($\pm 2$)}: apply a boxcar averaging kernel along the spectral axis before shearing, with a half-pixel symmetry correction via $[0.5,\,0.5]$ convolution.
+\end{itemize}
+Supported orders: any combination from $\{0, -1, +1, -2, +2, \text{inf}\}$.
+
+\subsection{Tomographic Matrix Operator}
+Generate an explicit linear operator matrix for the tomographic model. For a given cube shape and order list, produce a matrix mapping flattened cube to flattened measurements. Each non-zero order row uses a shift map; order~0 uses identity columns; order ``inf'' uses row-sum projections. For order $\pm2$, the matrix uses linear-interpolation weights ($\pm0.5$ for 2-pixel partial assignments).
+
+\subsection{Tomographic Transpose (Adjoint) Operator}
+The adjoint of the tomographic forward model: back-projects measurement values along their dispersion paths to the data cube. For each order, measurement values are distributed uniformly across the spectral dimension at the sheared positions. Unmapped rows in the back-projection are filled with ones (for multiplicative reconstruction) or zeros (for additive reconstruction).
+
+\subsection{Data Cube from Parameters}
+Generate a 3D data cube from 3-channel parameters: at each spatial pixel, construct a Gaussian (pixelated or continuous) centered at $\text{velocity} + \lambda_{\text{dim}}/2$ with width $\text{linewidth}$, scaled by intensity. The cube spans a configurable number of wavelength bins.
+
+\subsection{Simplified Blur-Only Forward Model (Educational)}
+A simplified 1D-convolution forward model for tutorial use: each row of a scene is convolved with a Gaussian kernel whose width varies per pixel. Uses tensor contraction for batch efficiency. This is a different forward model from the spectral/tomographic ones above.
+
+% ======================================================================
+\section{Noise Models}
+% ======================================================================
+
+\subsection{Gaussian Noise}
+Additive white Gaussian noise parameterized by SNR in dB:
+\begin{itemize}[nosep]
+  \item Compute signal variance per measurement channel
+  \item Noise standard deviation $= \sqrt{\text{signal\_variance}\;/\;10^{\,\text{SNR}_{\text{dB}}/10}}$
+  \item Add independent normal samples
+\end{itemize}
+
+\subsection{Poisson (Shot) Noise}
+Photon-counting noise with three parameterization modes:
+\begin{enumerate}[nosep]
+  \item \textbf{Max count}: scale signal so peak $=$ max\_count, apply Poisson draws, unscale
+  \item \textbf{Average count}: scale signal so mean $=$ avg\_count, apply Poisson draws, unscale
+  \item \textbf{SNR-based}: compute avg\_brightness $= (10^{\,\text{SNR}_{\text{dB}}/20})^{2}$, scale appropriately, apply Poisson, unscale
+\end{enumerate}
+
+\subsection{No-Noise Mode}
+Return signal unchanged (for clean evaluation).
+
+% ======================================================================
+\section{Source Parameter Reconstruction (Inverse Problem Solvers)}
+% ======================================================================
+
+\subsection{SMART --- Spectral Multiplicative Algebraic Reconstruction Technique}
+\textbf{Type}: Tomographic, multiplicative-iterative, data-cube-based.
+
+\smallskip
+\textbf{Initialization}: Create data cube from zero-order measurement with uniform velocity $=0$, uniform width $=1.38$ pixels.
+
+\smallskip
+\textbf{Algorithm} (for each outer iteration):
+\begin{enumerate}[nosep]
+  \item \textbf{Contrast enhancement}: $\text{cube} \rightarrow (\text{cube} + \text{cube}^{\,1+\psi}) \times \frac{\sum\text{cube}}{\sum(\text{cube} + \text{cube}^{\,1+\psi})}$ (power-law with energy conservation, configurable exponent $\psi$)
+  \item \textbf{3D smoothing}: convolve cube with separable kernel $[0.25, 0.5, 0.25] \otimes [0.25, 0.5, 0.25] \otimes [0.25, 0.5, 0.25]$ in $(\lambda, y, x)$
+  \item \textbf{Inner iterations} (configurable count):
+  \begin{itemize}[nosep]
+    \item Forward-project cube to measurements via tomographic matrix
+    \item Compute chi-squared per order: $\text{mean}\big((\text{meas} - \text{est})^2 / (\text{meas} + \varepsilon)\big)$
+    \item Skip converged orders ($\chi^2 < 10^{-10}$)
+    \item Compute correction factors: $\text{correction} = (\text{meas} / (\text{est} + \varepsilon))^{2/3}$
+    \item Back-project corrections via transpose operator
+    \item Voxels unconstrained by a given order's projection $\rightarrow$ set correction to $1$
+    \item Weight: geometric mean of non-converged-order corrections (equal weights)
+    \item Apply multiplicative correction to cube
+  \end{itemize}
+\end{enumerate}
+
+\textbf{Post-processing}: Extract parameters via:
+\begin{itemize}[nosep]
+  \item \textbf{PMF fitter} (method of moments): normalize each pixel's spectrum to unit sum, compute weighted mean $\rightarrow$ velocity, weighted std $\rightarrow$ linewidth, total sum $\rightarrow$ intensity
+  \item \textbf{MPFIT fitter}: fit each pixel's spectrum against an EIS template, extract component-0 parameters, convert physical units back to pixel units
+\end{itemize}
+
+\textbf{Infinite-order prior} (optional): append a spatial-sum projection (uniform spectral shape) to measurements with a prior line width.
+
+\smallskip
+\textbf{Configurable}: $\psi$, max outer iterations, max inner iterations, prior width, fitter choice, template.
+
+\subsection{SMART2 --- Two-Component + Background SMART}
+\textbf{Type}: Same as SMART but models \emph{two} Gaussian lines plus a background continuum.
+
+\smallskip
+\textbf{Initialization}: Build cube as sum of:
+\begin{align*}
+  &\text{Component 1: } \text{Gaussian}(\text{intensity} \times f_1,\; \text{cent}_1,\; \text{wid}_1) \\
+  &\text{Component 2: } \text{Gaussian}(\text{intensity} \times f_2,\; \text{cent}_2,\; \text{wid}_2) \\
+  &\text{Background: } \text{norm\_shape}[\lambda] \times \text{intensity} \times f_{\text{bg}}
+\end{align*}
+
+\textbf{Key differences from SMART}:
+\begin{itemize}[nosep]
+  \item Infinite-order prior uses the actual cube's spatial sum (per-wavelength profile), clipped and renormalized to match zero-order total
+  \item Prior carries a configurable \textbf{weight} in the correction factor
+  \item Correction factors per order are raised to their order weight before geometric averaging
+  \item \textbf{Core-copy boundary condition}: unmapped spectral rows in a back-projection use the central row's correction value
+  \item Final PMF fitting subtracts background minimum before fitting
+\end{itemize}
+
+\textbf{Configurable}: fractions ($f_1$, $f_2$, $f_{\text{bg}}$), centers ($\text{cent}_1$, $\text{cent}_2$ in \AA), widths ($\text{wid}_1$, $\text{wid}_2$ in \AA), background shape (normalized array per wavelength), $\psi$, max outer/inner iterations, prior weight, live plot flag, initial cube override, fitter choice.
+
+\subsection{Column-Wise Regularized Optimization (Scipy Solver)}
+\textbf{Type}: Per-column, optimization-based (no data cube).
+
+For each detector column independently, solve:
+\[
+\min_{\mathbf{I}_r,\,\mathbf{V}_r,\,\mathbf{W}_r} \;\; \mathcal{D}\big(\mathcal{F}(\mathbf{I},\mathbf{V},\mathbf{W}),\, \text{meas}\big) \;+\; \lambda_I \cdot \text{TV}(\mathbf{I}) \;+\; \lambda_V \cdot \text{TV}(\mathbf{V}) \;+\; \lambda_W \cdot \text{TV}(\mathbf{W})
+\]
+where $\mathcal{D}$ is data fidelity (L2 sum-of-squares or L1 sum-of-absolutes) and $\text{TV}(\mathbf{X}) = \sum (\mathbf{X}_{r+1} - \mathbf{X}_r)^2$ along the column.
+
+\textbf{Initialization}: intensity $=$ zero-order measurement; velocity and linewidth $=$ uniform values from rest wavelength, mid-wavelength, dispersion scale.
+
+\textbf{Optimizer}: configurable method (default L-BFGS-B), configurable max iterations.
+
+\textbf{Parallel variant}: distributes per-column optimization tasks across multiple workers.
+
+\subsection{Two-Component Column-Wise Solver (Scipy2)}
+\textbf{Type}: Extension of column-wise solver for two Gaussians + background.
+
+\textbf{Decision variables} (7 per spatial row): $I_1$, $V_1$, $W_1$, $I_2$, $V_2$, $W_2$, $I_{\text{bg}}$.
+
+\textbf{Objective} (per column):
+\[
+\min \;\; \mathcal{D}\big(\mathcal{F}(G_1) + \mathcal{F}(G_2) + \mathcal{P}(\mathbf{I}_{\text{bg}}),\; \text{meas}\big) + \text{regularization}
+\]
+Background projection $\mathcal{P}$ uses a precomputed tomographic projection matrix for a uniform-cube background basis, masked by the spatial mask. Regularization weights are dynamically scaled by component intensity ratios. Returns only component~1 parameters.
+
+\subsection{Gradient Descent Solver (Global, Differentiable)}
+\textbf{Type}: Full-field optimization using automatic differentiation.
+
+\textbf{Decision variables}: three 2D arrays (init: intensity $=$ zero-order meas, velocity/width $=$ uniform).
+
+\textbf{Objective}:
+\[
+\min \;\; \mathcal{D}\big(\mathcal{F}(\mathbf{I},\mathbf{V},\mathbf{W}),\, \text{meas}\big) \;+\; \lambda_I \cdot \text{TV}(\mathbf{I}) \;+\; \lambda_V \cdot \text{TV}(\mathbf{V}) \;+\; \lambda_W \cdot \text{TV}(\mathbf{W})
+\]
+
+\textbf{Optimizers}: Adam (configurable lr) or SGD. \textbf{Data fidelity}: L1 or L2. \textbf{Regularization}: Total Variation on all three maps. Can save intermediate reconstructions.
+
+\subsection{Neural Network Solver (U-Net)}
+\textbf{Type}: Learned direct inversion via trained convolutional network.
+
+\textbf{Architecture}: U-Net with configurable:
+\begin{itemize}[nosep]
+  \item Input channels (number of spectral orders)
+  \item Output channels (1 for single-parameter, 3 for all parameters)
+  \item Number of down/up layers, starting filter count, kernel sizes per layer
+  \item Bilinear upsampling or transposed convolution
+  \item Residual mode (output difference from input)
+\end{itemize}
+
+\textbf{Output modes}: ``all'' (3 channels), ``int'' (intensity only), ``vel'' (velocity only), ``width'' (linewidth only).
+
+\textbf{Inference}: Load checkpoint $\rightarrow$ normalize input measurements $\rightarrow$ forward pass $\rightarrow$ inverse-transform output parameters.
+
+\subsection{Diffusion-Based Solver (Denoising Diffusion Posterior Sampling)}
+\textbf{Type}: Learned prior (DDPM) combined with measurement-consistency gradient guidance.
+
+\begin{itemize}[nosep]
+  \item Load pre-trained U-Net denoiser from diffusion training checkpoint
+  \item Configure diffusion: image\_size, timesteps (1000), sampling\_timesteps, cosine beta schedule, gradient\_scale per parameter channel
+  \item During each denoising step: model denoises, then measurement-consistency gradient pulls the sample toward the measurements
+  \item Draw multiple samples; final estimate $=$ sample mean
+\end{itemize}
+
+\subsection{Tomographic Inversion (Tomoinv)}
+\textbf{Type}: Iterative tomographic with Gaussian projection constraint.
+
+\textbf{Setup}: Fixed tomographic matrix for $21$ spectral wavelengths, orders $[0, -1, 1]$.
+
+\textbf{Two modes}:
+\begin{enumerate}[nosep]
+  \item \textbf{Inverse mode}: Compute regularized pseudoinverse, then iterate: $\mathbf{r} \leftarrow \text{proj}_{\text{gauss}}\big(\mathbf{r}_{\text{pinv}} + \lambda(\mathbf{H}^T\!\mathbf{H} + \lambda\mathbf{I})^{-1}\,\mathbf{r}\big)$, decaying $\lambda$ by $0.95$ each iteration
+  \item \textbf{Gradient mode}: $\mathbf{r} \leftarrow \text{proj}\big(\mathbf{r} - \alpha(\mathbf{H}^T\!\mathbf{H}\mathbf{r} - \mathbf{H}^T\!\mathbf{y})\big)$
+\end{enumerate}
+
+\textbf{Projection modes}: Gaussian, positivity, or Gaussian$+$positivity.
+
+\subsection{Prior-Based Solver}
+\textbf{Type}: Non-iterative, parametric-prior estimate.
+
+Estimates: intensity $= f_1 \times \text{meas}_0$; velocity $=$ uniform value from $(\text{prior\_center} - \lambda_{\text{mid}}) / \text{disp\_scale}$; linewidth $=$ uniform from prior\_width / disp\_scale.
+
+\subsection{Gaussian Fitting from Data Cubes (Method of Moments)}
+\textbf{Version 1}: Normalize each pixel's spectrum to unit PMF. Compute intensity $=$ total sum; velocity $=$ weighted mean $-$ spectral\_center; linewidth $=$ $\sqrt{\text{weighted variance}}$.
+
+\textbf{Version 2}: Same but with edge handling: clip intensity $[0,1]$, velocity $[-2,2]$ px, linewidth $[0.5,2.3]$ px; NaN $\rightarrow$ defaults.
+
+\subsection{Nonlinear Curve Fitting from Data Cubes}
+Fit each pixel's spectrum to a pixel-integrated Gaussian via Levenberg-Marquardt: 3 parameters (intensity, centroid, width) bounded, max 5000 function evaluations.
+
+\subsection{Pseudoinverse + Gaussian Fitting (Linear Recon)}
+Solve $\mathbf{H}\mathbf{x} = \mathbf{y}$ via pseudoinverse, reshape into data cube, refine per-column via parametric Gaussian fitting.
+
+\subsection{FFT-Based Line Width Estimation}
+Compute $|\mathcal{F}(\text{order}_1) / \mathcal{F}(\text{order}_0)|$ or $|\mathcal{F}((\text{order}_1+\text{order}_{-1})/2) / \mathcal{F}(\text{order}_0)|$. The magnitude ratio forms a Gaussian in frequency space; fit its width via curve\_fit to recover the underlying line width.
+
+% ======================================================================
+\section{Error and Quality Metrics}
+% ======================================================================
+
+\subsection{Structural Similarity (SSIM)}
+Per-2D-channel SSIM between truth and estimate, data\_range $= \max(\text{truth}) - \min(\text{truth})$. Vectorized over leading dimensions.
+
+\subsection{Normalized Root Mean Square Error (NRMSE)}
+$\sqrt{\text{mean}((\text{truth} - \text{estimate})^2)}\;/\;\text{norm}$, where norm is: $\text{`sigma'}$ (std of truth), $\text{`minmax'}$ (range), or $\text{None}$ (1 = raw RMSE). Vectorized.
+
+\subsection{Peak Signal-to-Noise Ratio (PSNR)}
+$10 \log_{10}\!\big(\max(\text{truth})^2 \;/\; \text{mean}((\text{truth} - \text{estimate})^2)\big)$. Vectorized.
+
+\subsection{Normalized Mean Squared Error (NMSE, batch)}
+Per-channel NMSE: $\text{mean}\big(((\text{truth} - \text{estimate})\,/\,(\max(\text{truth}) - \min(\text{truth})))^2\big)$, averaged across batch.
+
+\subsection{Cycle Loss (Measurement-Domain Consistency)}
+Pass estimate parameters through forward model; compute L2 or L1 difference against original measurements: $\text{mean}\big((\mathcal{F}(\text{estimate}) - \text{measurements})^{2}\big)$.
+
+\subsection{Total Variation (TV) Loss}
+$\text{mean}(|\mathbf{X}_{r+1,c} - \mathbf{X}_{r,c}|) \;+\; \text{mean}(|\mathbf{X}_{r,c+1} - \mathbf{X}_{r,c}|)$
+
+\subsection{Gradient Residual Loss}
+First and second spatial derivatives of residual image, penalized by L1 or L2, with predefined weights: $d_x$ ($0.5$), $d_y$ ($0.5$), $d^2_x$ ($0.25$), $d^2_y$ ($0.25$), $d_{xy}$ ($0.25$).
+
+\subsection{Combined Loss Function}
+Weighted sum of parameter-space losses (MSE, L1, NMSE) and measurement-domain losses (cycle loss), with per-loss weights. For single-channel output modes, substitutes the network output into the appropriate channel of a cloned truth tensor.
+
+\subsection{Error Statistics (RMSE, Bias)}
+Per-channel: $\text{RMSE} = \sqrt{\text{mean}((\text{truth} - \text{estimate})^2,\; \text{spatial\_axes})}$; $\text{Bias} = \text{mean}(\text{estimate} - \text{truth},\; \text{spatial\_axes})$.
+
+\subsection{Per-Pixel Gaussian Fitting Accuracy}
+For comparing spectral fitting methods on a single pixel: compute fitted parameters from fit results, compare against target parameters using RMSE and Bias in physical units.
+
+% ======================================================================
+\section{Data Management}
+% ======================================================================
+
+\subsection{Pre-Computed Dataset}
+Load measurement--parameter pairs from .npy dictionary files. Each file contains keys: \texttt{int}, \texttt{vel}, \texttt{width} (parameter maps), \texttt{meas\_0}, \texttt{meas\_-1}, \texttt{meas\_1}, \texttt{meas\_-2}, \texttt{meas\_2} (up to 5 spectral orders). Organized into train/val/test subdirectories.
+
+\subsection{On-the-Fly Dataset}
+Generate training data dynamically from stored parameter maps:
+\begin{itemize}[nosep]
+  \item Load intensity, velocity, linewidth arrays from disk
+  \item Randomize velocity: sample scaling from $\mathcal{U}[0, v_{\max}]$, map to $[-\text{scale}, +\text{scale}]$
+  \item Randomize linewidth: sample min/max from two uniform distributions, map to $[\min, \max]$
+  \item Compute measurements via forward model in batches (GPU-accelerated)
+\end{itemize}
+
+\subsection{Data Normalization Transforms}
+\begin{itemize}[nosep]
+  \item \textbf{Measurement transform}: divide by $\max\_\text{intensity}$ (6000)
+  \item \textbf{Measurement inverse}: multiply by $\max\_\text{intensity}$
+  \item \textbf{Parameter transform}: divide intensity by $\max\_\text{intensity}$; standardize velocity/linewidth to zero mean, unit variance
+  \item \textbf{Parameter inverse transform}: reverse, with optional width conversion \AA{} $\rightarrow$ km/s
+\end{itemize}
+Statistics loaded from a pre-computed stats file.
+
+\subsection{Dataset Statistics Computation}
+Compute: $\max\_\text{intensity}$, $\text{mean\_intensity}$, $\text{mean\_meas}$, $\text{mean\_vel}$, $\text{std\_vel}$, $\text{mean\_width}$, $\text{std\_width}$ across all training samples.
+
+\subsection{On-Demand Noise Injection}
+Apply noise to measurements at dataset access time with configurable SNR and noise model.
+
+\subsection{Date-Aware Dataset Splitting}
+Split .npy patch files into train/val/test by extracting unique observation date strings from filenames. All patches from the same observation raster go to the same split (80/10/10). Uses random split at the raster level to prevent spatial-correlation leakage across splits.
+
+% ======================================================================
+\section{Learning-Based Reconstruction (Neural Network Training)}
+% ======================================================================
+
+\subsection{Training Pipeline}
+Train a U-Net to map measurements $\rightarrow$ parameters:
+\begin{itemize}[nosep]
+  \item Configurable: input/output channels, output mode, starting filters, layers, kernel sizes, bilinear upsampling, residual mode
+  \item Configurable: optimizer (Adam/SGD), loss (MSE/L1/NMSE), learning rate, epochs, batch size
+  \item Optional cycle loss with configurable weight
+  \item On-the-fly dataset regeneration every $N$ epochs
+  \item Validation every $N$ epochs; best model saved by validation loss
+  \item Keyboard-interrupt handling
+\end{itemize}
+
+\subsection{Training Metrics}
+Per epoch tracked: training loss, validation loss, per-channel SSIM (train/val), per-channel RMSE (train/val).
+
+\subsection{Model Checkpointing}
+\begin{itemize}[nosep]
+  \item Best validation-loss model saved as \texttt{best\_model.pth}
+  \item Final model saved after training completion
+  \item Interrupted model saved on keyboard interrupt
+\end{itemize}
+
+\subsection{Training Diagnostics Output}
+\begin{itemize}[nosep]
+  \item Loss convergence plot (semilog, train + validation)
+  \item SSIM vs epoch plot (per channel, train + validation)
+  \item RMSE vs epoch plot (per channel, train + validation)
+  \item Oracle baseline: SSIM/RMSE/MAE of constant predictor (training mean)
+  \item Summary text file with all parameters, baselines, and final metrics
+\end{itemize}
+
+\subsection{Model Loading from Checkpoint}
+Parse training summary text file to recover architecture parameters; reconstruct U-Net; load weights; set to eval mode.
+
+\subsection{Inference Prediction}
+Run trained network on batched or single measurements $\rightarrow$ estimated parameter maps.
+
+\subsection{Multi-SNR Evaluation}
+Evaluate trained model at multiple SNR levels: rebuild dataset with each SNR, run inference, collect SSIM and RMSE per SNR.
+
+% ======================================================================
+\section{EIS Spectral Data Processing Subsystem}
+% ======================================================================
+
+\subsection{Parallel EIS Spectral Fitting via MPFIT}
+Fit each spatial pixel's observed EUV spectrum against a multi-Gaussian + polynomial template:
+\begin{itemize}[nosep]
+  \item Prepare data: copy to safe arrays, apply mask, handle bad data (negative errors $\rightarrow$ 0)
+  \item For each spatial row, distribute pixels across workers
+  \item Each pixel fit: select in-window wavelengths, initial guess via \texttt{scale\_guess}, run MPFIT with configurable tolerances
+  \item Return: fitted parameters per pixel, parameter errors, fit status codes, $\chi^2$ values
+  \item Configurable: number of parallel workers, minimum data points, Gaussian component index
+\end{itemize}
+
+\subsection{Parameter Extraction from Fit Results}
+Extract intensity, velocity, and linewidth for a specified Gaussian component:
+\begin{itemize}[nosep]
+  \item Intensity $= \sqrt{2\pi} \times \text{peak} \times \text{width}$
+  \item Velocity $= c \times (\text{fitted\_centroid} - \text{rest\_wavelength}) / \text{rest\_wavelength}$
+  \item Linewidth $=$ fitted\_width
+  \item Error propagation for intensity from peak + width errors
+  \item Bad fits (status $\leq 0$) $\rightarrow$ zero all parameters
+\end{itemize}
+
+\subsection{Model-Based Spectrum Inpainting}
+After fitting, for each spatial pixel with masked wavelength points: evaluate the full fitted model at all wavelengths, replace only the masked wavelength values with the model values. Unmasked data is left untouched.
+
+\subsection{Single-Pixel Spectral Fitting with Component Decomposition}
+Fit a single pixel spectrum using MPFIT against a template:
+\begin{itemize}[nosep]
+  \item Support Poisson error weighting or uniform weighting
+  \item Return: raw parameters, dense wavelength grid, combined fit curve, per-Gaussian component curves, background curve
+\end{itemize}
+
+\subsection{EIS to Slitless Spectral Imager (SSI) Interpolation}
+Convert EIS native-wavelength data cube to uniform-wavelength SSI data cube:
+\begin{itemize}[nosep]
+  \item Target grid: $\lambda_{\text{ref}} \pm \Delta\lambda \times (\text{index} - \text{center})$
+  \item For each spatial pixel: interpolate native wavelength $\rightarrow$ flux onto target grid
+  \item Configurable interpolation method and edge-padding mode
+\end{itemize}
+
+\subsection{Synthetic Spectrum from 3-Parameter Representation}
+Generate a Gaussian spectral curve (as peak flux density):
+\begin{itemize}[nosep]
+  \item $\text{center} = \lambda_{\text{rest}} \times (1 + v / c)$
+  \item $\text{peak} = I \,/\, (\sqrt{2\pi}\,W)$
+  \item $\text{flux} = \text{peak} \times \exp(-\frac12((\lambda - \text{center})/W)^2)$
+\end{itemize}
+This is the reverse of the PMF fitter: parameters $\rightarrow$ spectrum.
+
+\subsection{PMF-to-Physical Unit Conversion}
+Convert PMF fitter output (pixel units) to physical units: intensity $\times$ disp\_scale; velocity $\times$ disp\_scale $\times$ $c$ / $\lambda_{\text{rest}}$; linewidth $\times$ disp\_scale.
+
+\subsection{Random Spatial Patch Extraction}
+\textbf{Intensity-weighted}: sample random top-left coordinates, score by total intensity, return top-$N$. Pool size $= \min(32,\,3N)$.
+
+\textbf{Mask-aware}: pre-compute integral image of binary mask; for all valid positions compute mask-sum in $O(1)$; exclude any with mask-sum $>0$; score by intensity; return top-$N$ with coordinates and measurement patches.
+
+\subsection{EIS Data Download}
+Download EIS HDF5 data/header files from a remote HTTP mirror for a given observation date. Construct URL from YYYY/MM/DD, use curl or wget with skip-if-exists.
+
+\subsection{EIS Data Cube Outlier Detection and Correction}
+\textbf{Detection}: flag spectral slices with mixed zero/nonzero pixels ($>50$ zeros but $<N-50$ zeros); flag pixels $<-1000$. \textbf{Correction}: per-pixel 1D cubic interpolation across flagged spectral points.
+
+\subsection{EIS Parameter Clipping to Physical Bounds}
+Clip parameter arrays: intensity $\in [0, 6000]$; velocity $\in [-68.5, +68.5]$ km/s; linewidth $\geq 0.022$ \AA.
+
+\subsection{Physics-Based Dataset Quality Filtering}
+Iterate over .npy dataset files; compute validity mask: intensity $\in [100, 6000]$, $|v| < 68.5$ km/s, $W > 0.022$ \AA. Delete any file where any pixel violates these bounds. Optionally scale measurement arrays by disp\_scale.
+
+\subsection{Background Offset Calibration via Grid Search}
+Brute-force 2D grid search for best affine background: $\text{meas}_0 \approx (\alpha+1)\,I + \beta$. Search $\alpha \in [0, 0.3]$, $\beta \in [0, 495]$ over a $100\times100$ grid, minimizing squared error.
+
+\subsection{EIS Detector Noise Characterization}
+Fit photon-transfer-curve noise model: $\text{error} = \sqrt{a \cdot |I| + b}$ ($a = \text{gain}$, $b = \text{read-noise}^2$). Apply to multiple observation dates; evaluate fit quality via $R^2$.
+
+\subsection{EIS Template Manipulation}
+\textbf{Background stripping}: deep-copy template, set \texttt{n\_poly}=0, truncate \texttt{parinfo} and \texttt{fit} arrays to Gaussian-only. Produces a Gaussian-only template for comparison testing.
+
+\subsection{Global Template Fitting for Solver Initialization}
+Fit a 2-Gaussian + polynomial model to the global mean spectrum of a dataset to derive initialization parameters: $f_1$, $f_2$, $f_{\text{bg}}$, $\text{cent}_1$, $\text{cent}_2$, $\text{wid}_1$, $\text{wid}_2$, $\text{bg\_shape\_norm}$.
+
+\subsection{Dataset Statistical Profiling with Physics Filtering}
+Load EIS patches, compute raw and physics-filtered statistics (percentiles at 0/1/5/50/95/99/100, mean, std) for intensity, velocity, linewidth. Generate distribution histograms and 2D histograms.
+
+\subsection{Full FOV Dataset Generation (No Cropping)}
+For each EIS observation: download $\rightarrow$ fit spectra $\rightarrow$ interpolate to SSI cube $\rightarrow$ forward-project to measurements (orders $0, -1, +1$) $\rightarrow$ save full-FOV data (parameter maps, 3 measurement maps, data cube).
+
+% ======================================================================
+\section{Visualization}
+% ======================================================================
+
+\subsection{Source Parameter Plot}
+3-panel figure: intensity (hot), velocity (seismic), linewidth (plasma). Optional SSIM/RMSE/PSNR annotations.
+
+\subsection{Measurement Plot}
+$K$-panel figure (one per spectral order), hot colormap, each titled by order number.
+
+\subsection{Truth vs Reconstruction Comparison}
+Multi-row grid: reconstructed parameters (top), true parameters (bottom), with colormaps and colorbars.
+
+\subsection{Reconstruction Results (Neural Network)}
+3-row grid: measurements (row 1), true parameters (row 2), predicted parameters (row 3). Single-channel modes show only the relevant panel. Annotated with SSIM and RMSE per channel.
+
+\subsection{Loss Convergence Plot}
+Line plot of loss vs epoch, with grid, optionally semilog $y$-scale.
+
+\subsection{Loss vs Iteration Plot}
+Line plot with grid showing loss over optimizer iterations.
+
+\subsection{Error Histograms}
+Per-channel histograms (20 bins, orange fill, black edges) of reconstruction errors, titled with RMS error and bias, for both physical and pixel units.
+
+\subsection{Joint Error Distribution Plots}
+Hexbin joint plots of error vs true value per channel, showing bias and error std. Plus cross-dependence plots (velocity error vs intensity, linewidth error vs intensity).
+
+\subsection{Grouped Bar Plots}
+Multi-group, multi-member bar chart with configurable group labels, member labels, axis labels; bar values annotated.
+
+\subsection{Comparison Sweep Lines}
+Line plot with markers showing metric vs swept parameter, one line per method.
+
+\subsection{FOV Spectra Plot (6-Panel Summary)}
+$2{\times}3$ grid: row 1 = intensity/velocity/linewidth, row 2 = measurements (order $0$/$-1$/$+1$).
+
+\subsection{Multi-Position FOV Spectral Visualization}
+Read EIS data cube, extract spectra at specified positions, plot each with error bars in multi-panel figure, configurable wavelength window.
+
+\subsection{Spectral Fit Diagnostic Plot (Multi-Method)}
+Single-pixel plot: observed spectrum (black dots), combined fit (red line), individual Gaussian components, background, ideal param3d curve. Show fitted parameter values in text box.
+
+\subsection{2D Parameter Map Comparison Grid}
+Multi-column grid: true parameters (col 1) vs reconstructed maps from multiple fitting methods (cols 2+), 3 rows (intensity/velocity/linewidth), annotated with RMSE and Bias.
+
+\subsection{Patch Location Markers}
+Overlay rectangle patches on a parameter plot to show extraction locations.
+
+\subsection{Full FOV with Patch Overlay}
+Plot full-FOV intensity map with blue rectangle overlays marking extracted patch locations.
+
+\subsection{Animated Map Display}
+Loop display of multiple 2D maps with updated colormap per frame.
+
+% ======================================================================
+\section{Orchestration and Comparison}
+% ======================================================================
+
+\subsection{Single-Source Reconstruction Pipeline (Reconstructor)}
+\begin{enumerate}[nosep]
+  \item Take Imager (with configured noise params) and solver function
+  \item Simulate measurements: forward model + add noise
+  \item For neural network solver: apply measurement normalization before solve, inverse-transform parameters after solve
+  \item Run solver $\rightarrow$ reconstructed parameters and loss trace
+  \item Support multiple noise realizations (re-simulate noise, re-solve)
+  \item Package results as Recon object with evaluation
+\end{enumerate}
+
+\subsection{Multi-Source Reconstruction Pipeline (Reconstructor Multi)}
+\begin{enumerate}[nosep]
+  \item Take array of parameter maps or pre-computed measurements
+  \item For each source: optionally scale intensity, create Imager, optionally set measurements, create Reconstructor, solve
+  \item Collect per-source metrics: SSIM, RMSE (pixel/phys), MAE (pixel/phys), Bias (pixel/phys)
+  \item Also collect mean-baseline metrics (predicting spatial mean per channel)
+\end{enumerate}
+
+\subsection{Standardized Solver Comparison Testbed}
+Compare solvers on a dataset with uniform measurement configuration:
+\begin{itemize}[nosep]
+  \item Dispatch: \texttt{`scipy'} (column-wise), \texttt{`tomoinv'} (tomographic), \texttt{`gd'} (gradient descent), \texttt{`nn'} (U-Net), \texttt{`diffusion'} (DPS), \texttt{`smart'} (SMART)
+  \item Configurable: data path, data file, save flag, number of detectors, SNR, noise model
+  \item Configurable solver-specific keyword arguments
+  \item Output: reconstruction time, RMSE/MAE/SSIM/Bias statistics, comparative plots, error histograms, pickle save
+\end{itemize}
+
+\subsection{Results Persistence}
+Save to timestamped directory: summary text, per-source reconstruction figure, error histograms (pixel and phys), recon arrays (.npy), full Reconstructor object (pickle).
+
+\subsection{Training Results Persistence}
+Save to timestamped directory: summary text, convergence plot, SSIM and RMSE vs epoch plots, per-SNR bar plots, SSIM/RMSE arrays (.npy), model checkpoints (.pth).
+
+% ======================================================================
+\section{Output Channel Adjustment}
+% ======================================================================
+
+\subsection{Channel Selection and Extension}
+For networks that output only a subset of channels:
+\begin{itemize}[nosep]
+  \item \textbf{Crop mode}: select matching channels from ground truth
+  \item \textbf{Extend mode}: insert network output into a full 3-channel tensor (copying truth into the other channels)
+\end{itemize}
+
+% ======================================================================
+\section{Synthetic Data Generation}
+% ======================================================================
+
+\subsection{Patch Extraction from Images}
+Extract 5 patches of configurable size from the center and quadrant centers of input images. Save as grayscale images.
+
+\subsection{EIS-Derived Dataset Generation}
+Tile EIS parameter maps into patches of configurable size, apply forward model to generate measurements, save as .npy dictionary files.
+
+\subsection{ImageNet-Derived Dataset Generation}
+Load ImageNet $64{\times}64$ batches, convert to grayscale, rotate $90^\circ$, normalize per-image to $[0,1]$, split into train/val/test.
+
+\subsection{On-the-Fly Training Data from Images}
+For each data point: randomly select 3 grayscale patches (for $I$, $V$, $W$), normalize each to $[0,1]$, apply random velocity scale $\mathcal{U}[0.1,2.0]$ px and random linewidth range (min $\in [1.0,1.3]$, max $\in [1.3,2.2]$ px, linearly increasing with min), generate measurements via forward model, save.
+
+\subsection{Dataset Tomographic Measurement Regeneration}
+For an existing patch dataset with 3D data cubes: regenerate all 5 measurement channels from the cube via the tomographic forward model, overwrite original measurements, recompute normalization statistics.
+
+\subsection{Correlated Random Field Generation (Gaussian Smoothing)}
+Generate smooth 2D random maps by filtering white noise with $\sigma=(0,4,4)$ Gaussian kernel, clipping to $[-0.5,0.5]$, shifting to $[0,1]$, scaling to $[v_{\min}, v_{\max}]$.
+
+\subsection{Worley (Cellular) Noise Texture Generation}
+Generate procedural textures using Voronoi/Worley noise: place random feature points, compute $\sqrt{d_2} - \sqrt{d_1}$ (distance difference). Normalize and optionally scale peak to $[0.7, 1.0]$ per scene. Batch generation supported.
+
+\subsection{Synthetic Test Pattern Generation}
+\begin{itemize}[nosep]
+  \item \textbf{Sinusoidal grid}: $\cos(k_x x) \times \sin(k_y y)$ over a square grid
+  \item \textbf{Block letter ``I''}: rendered via drawing primitives, normalized to $[0,1]$
+  \item \textbf{Combined phantom}: weighted sum of sinusoidal grid + block letter, split across 3 channels for $I$/$V$/$W$ testing
+\end{itemize}
+
+\subsection{Plus/Cross Test Pattern Generation}
+Superposition of plus (+) and cross ($\times$) signs using anti-aliased line drawing with Gaussian blur smoothing.
+
+\subsection{Horizontal Lines Test Pattern}
+Equispaced horizontal lines using anti-aliased line drawing with Gaussian blur.
+
+% ======================================================================
+\section{Appendix A: Physical Constants and Defaults}
+% ======================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Constant} & \textbf{Value} & \textbf{Units} \\
+\midrule
+Speed of light                          & 299,792.458      & km/s \\
+Default rest wavelength                 & 195.117937907451 & \AA \\
+Default mid-wavelength                  & 195.119          & \AA \\
+Default dispersion scale                & 0.022275         & \AA/pixel \\
+Default pixel size                      & 13.5             & \textmu m \\
+Default dispersion                      & 1/1.65           & \textmu m/m\AA \\
+Default spectral dimension              & 21               & pixels \\
+Max intensity (normalization)           & 6000             & counts \\
+EIS intensity valid range               & $[100, 25000]$  & counts \\
+EIS velocity valid range                & $[-68.5, +68.5]$& km/s \\
+EIS linewidth minimum                   & 0.022            & \AA \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ======================================================================
+\section{Appendix B: Spectral Order Semantics}
+% ======================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Order} & \textbf{Meaning} \\
+\midrule
+0   & Undispersed (direct) image \\
+$-1$ & First negative diffraction order --- dispersed opposite direction \\
+$+1$ & First positive diffraction order --- dispersed in dispersion direction \\
+$-2$ & Second negative diffraction order \\
+$+2$ & Second positive diffraction order \\
+inf & ``Infinite order'' --- spatial sum across dispersion direction (column sum, used as prior) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ======================================================================
+\section{Appendix C: Solver Capability Matrix}
+% ======================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Solver} & \textbf{Data-Cube} & \textbf{Multi-Comp.} & \textbf{Background} & \textbf{Learned} & \textbf{Per-Col.} & \textbf{Iter.} \\
+\midrule
+SMART            & $\checkmark$ &               &               &           &           & $\checkmark$ \\
+SMART2           & $\checkmark$ & $\checkmark$ & $\checkmark$  &           &           & $\checkmark$ \\
+Scipy            &              &               &               &           & $\checkmark$ & $\checkmark$ \\
+Scipy2           &              & $\checkmark$ & $\checkmark$  &           & $\checkmark$ & $\checkmark$ \\
+Gradient Descent &              &               &               &           &           & $\checkmark$ \\
+U-Net            &              &               &               & $\checkmark$ &        &           \\
+Diffusion DPS    &              &               &               & $\checkmark$ &        & $\checkmark$ \\
+Tomoinv          & $\checkmark$ &               &               &           &           & $\checkmark$ \\
+Prior Solver     &              &               &               &           &           &           \\
+FFT (Line Width) &              &               &               &           &           &           \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ======================================================================
+\section{Appendix D: Data Flow Diagram}
+% ======================================================================
+
+\begin{verbatim}
+Source (intensity, velocity, linewidth maps)
+    |
+    +----> 2D Spectral Forward Model ----> Clean Measurements (per spectral order)
+    |           or
+    +----> Data Cube Generator ----> 3D Spectral Cube
+                    |                        |
+                    |              Tomographic Forward ----> Clean Measurements
+                    |                        |
+                    |              Transpose (Adjoint)
+                    |                        |
+                    |              SMART, Tomoinv (Iterative Solvers)
+                    |
+    +----> Noise Model (Gaussian / Poisson) ----> Noisy Measurements
+                    |                                   |
+                    |    +---------------+---------+----+----+----------+------+
+                    |    v               v         v    v    v          v      |
+                    |  SMART/        Gradient    U-Net  Diffusion    Column-Wise |
+                    |  Scipy         Descent     (NN)   (DPS)       Optimization |
+                    |    |               |         |    |    |          |       |
+                    |    +---------------+---------+----+----+----------+       |
+                    |                                    |                      |
+                    |                       Reconstructed Parameters           |
+                    |                                    |                      |
+                    +-------> Error Metrics <------------+                      |
+                      (SSIM, NRMSE, PSNR, RMSE, MAE, Bias)
+\end{verbatim}
+
+% ======================================================================
+\section{Appendix E: External Dependencies (Interface Contracts)}
+% ======================================================================
+
+The system must interface with the following external capabilities:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Capability} & \textbf{Purpose} \\
+\midrule
+Multi-dimensional array computation & All numerical ops on 2D/3D/4D arrays \\
+Automatic differentiation & Gradients for GD and diffusion solvers \\
+GPU-accelerated tensor computation & Batch forward model and NN operations \\
+Nonlinear optimization (L-BFGS-B, etc.) & Column-wise scipy solvers \\
+Nonlinear least-squares (Levenberg-Marquardt) & Data cube spectrum fitting \\
+MPFIT (LM in IDL heritage) & EIS spectral template fitting \\
+Convolutional neural network construction & U-Net architecture \\
+Denoising diffusion probabilistic model & Diffusion-based solver \\
+Image structural similarity (SSIM) & Quality metric \\
+Gaussian filtering / convolution & SMART smoothing, synthetic data \\
+1D interpolation & EIS-to-SSI wavelength resampling \\
+Parallel job execution & Parallel EIS fitting, column optimization \\
+Statistical plotting & All visualization \\
+Image I/O & Data loading and figure saving \\
+File download (HTTP) & EIS data acquisition \\
+Template-based spectral fitting (eispac) & EIS spectral analysis \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
