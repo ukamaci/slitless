@@ -644,7 +644,7 @@ def smart2(
         cent2=195.17803,
         wid2=0.02907,
         bg_shape_norm=[0.04762] * 21,
-        live_plot=False
+        init_cube=None,
 ):
     if imager is not None:
         meas = imager.meas3dar.copy()
@@ -659,7 +659,9 @@ def smart2(
             tmplt = eispac.read_template(template_filepath)
 
     orders = imager.spectral_orders
-    orders_list = orders + ['inf']
+    orders_list = list(orders)
+    if prior_weight > 0:
+        orders_list.append('inf')
 
     meas_list = [meas[k] for k in range(NK)]
     
@@ -678,28 +680,33 @@ def smart2(
     vel2_pix_0 = (cent2 - mid_wave) / disp_scale
     wid2_pix_0 = wid2 / disp_scale
 
-    v1_0 = vel1_pix_0 * np.ones_like(int0)
-    w1_0 = wid1_pix_0 * np.ones_like(int0)
-    cube1 = datacube_generator(np.stack((int0 * frac1, v1_0, w1_0), axis=0), lamdim=L)
+    if init_cube is not None:
+        cube = init_cube.copy()
+    else:
+        v1_0 = vel1_pix_0 * np.ones_like(int0)
+        w1_0 = wid1_pix_0 * np.ones_like(int0)
+        cube1 = datacube_generator(np.stack((int0 * frac1, v1_0, w1_0), axis=0), lamdim=L)
 
-    v2_0 = vel2_pix_0 * np.ones_like(int0)
-    w2_0 = wid2_pix_0 * np.ones_like(int0)
-    cube2 = datacube_generator(np.stack((int0 * frac2, v2_0, w2_0), axis=0), lamdim=L)
-    
-    if bg_shape_norm is None:
-        bg_shape_norm = np.ones(L) / L
-    bg_cube = np.array(bg_shape_norm)[:, np.newaxis, np.newaxis] * (int0 * frac_bg)[np.newaxis, :, :]
+        v2_0 = vel2_pix_0 * np.ones_like(int0)
+        w2_0 = wid2_pix_0 * np.ones_like(int0)
+        cube2 = datacube_generator(np.stack((int0 * frac2, v2_0, w2_0), axis=0), lamdim=L)
+        
+        if bg_shape_norm is None:
+            bg_shape_norm = np.ones(L) / L
+        bg_cube = np.array(bg_shape_norm)[:, np.newaxis, np.newaxis] * (int0 * frac_bg)[np.newaxis, :, :]
 
-    cube = cube1 + cube2 + bg_cube
+        cube = cube1 + cube2 + bg_cube
 
-    infprior = np.sum(cube, axis=1)
-    infprior = infprior / np.clip(infprior.sum(axis=0), 1e-12, None) * meas[0].sum(axis=0)
-    meas_list.append(infprior)
+    if prior_weight > 0:
+        infprior = np.sum(cube, axis=1)
+        infprior = infprior / np.clip(infprior.sum(axis=0), 1e-12, None) * meas[0].sum(axis=0)
+        meas_list.append(infprior)
 
     num_projs = len(meas_list)
     
     weights = np.ones(num_projs)
-    weights[-1] = prior_weight
+    if prior_weight > 0:
+        weights[-1] = prior_weight
 
     mtx_list = []
     for order in orders_list:
@@ -764,9 +771,6 @@ def smart2(
                 
         print(f'chi:{np.mean(chi)}')
         
-    if live_plot:
-        plt.ioff()
-    
     if fitter=='mpfit':
         wave_cen = imager.mid_wavelength if imager is not None else 195.119
         disp_scale = imager.dispersion_scale if imager is not None else 0.022275
@@ -1102,14 +1106,14 @@ def scipy_solver_parallel2(
     lam_w=1e0, 
     maxiter=10000,
     n_jobs=-1,
-    frac1=0.75,
-    frac2=0.10,
-    frac_bg=0.15,
-    cent1=195.118,
-    wid1=0.029,
-    cent2=195.180,
-    wid2=0.030,
-    bg_shape_norm=None
+    frac1=0.8620,
+    frac2=0.0521,
+    frac_bg=0.0860,
+    cent1=195.11723,
+    wid1=0.02981,
+    cent2=195.17723,
+    wid2=0.02981,
+    bg_shape_norm=[0.04762] * 21
     ):
 
     meas = imager.meas3dar.copy()
