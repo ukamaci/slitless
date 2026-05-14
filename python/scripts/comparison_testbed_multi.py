@@ -37,7 +37,7 @@ data = np.load(path_data+data_file, allow_pickle=True).item()
 # param4dar, meas4dar = data['param3d'], data['meas']
 # param4dar, meas4dar = data['param3d'], data['meas']
 param4dar, meas4dar = data['param3d'], data['meas_damped']
-# param4dar, meas4dar = data['param3d'][[0]], data['meas_damped'][[0]]
+# param4dar, meas4dar = data['param3d'][[2]], data['meas_damped'][[2]]
 source_pix = False
 intenscaling = False
 # meas4dar=None
@@ -79,29 +79,29 @@ Imgr = Imager(pixelated=True, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise
 #     lam_w=2e9
 # )
 
-# # SCIPY
-# Rec = Reconstructor_Multi(
-#     imager=Imgr,
-#     param4dar=param4dar,
-#     meas4dar=meas4dar,
-#     pix=source_pix,
-#     solver=scipy_solver_parallel2,
-#     intenscaling=intenscaling,
-#     DATA_FIDELITY='L2',
-#     OPTIMIZER='L-BFGS-B',
-#     maxiter=10000,
-#     lam_i=1e-4,
-#     lam_v=5e5,
-#     lam_w=1e6,
-#     frac1=0.8620,
-#     frac2=0.0521,
-#     frac_bg=0.0860,
-#     cent1=195.11723,
-#     wid1=0.02981,
-#     cent2=195.17723,
-#     wid2=0.02981,
-#     bg_shape_norm=[0.04762] * 21
-# )
+# SCIPY
+Rec = Reconstructor_Multi(
+    imager=Imgr,
+    param4dar=param4dar,
+    meas4dar=meas4dar,
+    pix=source_pix,
+    solver=scipy_solver_parallel2,
+    intenscaling=intenscaling,
+    DATA_FIDELITY='L2',
+    OPTIMIZER='L-BFGS-B',
+    maxiter=10000,
+    lam_i=1e-4,
+    lam_v=5e5,
+    lam_w=1e6,
+    frac1=0.8620,
+    frac2=0.0521,
+    frac_bg=0.0860,
+    cent1=195.11723,
+    wid1=0.02981,
+    cent2=195.17723,
+    wid2=0.02981,
+    bg_shape_norm=[0.04762] * 21
+)
 
 # Tomoinv
 # Rec = Reconstructor_Multi(
@@ -142,7 +142,7 @@ Imgr = Imager(pixelated=True, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise
 #     intenscaling=intenscaling,
 #     # model_path='dbsnr_50_poisson_K_3_dssize_full',
 #     # model_path='2024_08_25__10_49_50_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_15_poisson_K_3_dssize_full'
-#     model_path='2026_03_14__17_31_33_NF_64_BS_4_LR_0.0002_EP_40_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_30_poisson_K_3_eis_v4'
+#     model_path='2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5'
 #     # model_path='dbsnr_15_poisson_K_3_eis_v4'
 # )
 
@@ -157,24 +157,24 @@ Imgr = Imager(pixelated=True, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise
 #     num_samples=10
 # )
 
-# SMART
-Rec = Reconstructor_Multi(
-    imager=Imgr,
-    meas4dar=meas4dar,
-    param4dar=param4dar,
-    pix=source_pix,
-    solver=smart2,
-    fitter='mpfit',
-    intenscaling=intenscaling,
-    psi=0.2,
-    maxouter=5,
-    maxinner=20,
-    live_plot=True,
-    prior_weight=0.3,
-    cent1=-1.13*(195.11794/299792.458)+195.11803,
-    wid1=42.74*(195.11794/299792.458),
-    wid2=42.74*(195.11794/299792.458)
-)
+# # SMART
+# Rec = Reconstructor_Multi(
+#     imager=Imgr,
+#     meas4dar=meas4dar,
+#     param4dar=param4dar,
+#     pix=source_pix,
+#     solver=smart2,
+#     fitter='mpfit',
+#     intenscaling=intenscaling,
+#     psi=0.2,
+#     maxouter=5,
+#     maxinner=50,
+#     prior_weight=0,
+#     cent1=-1.13*(195.11794/299792.458)+195.11803,
+#     wid1=42.74*(195.11794/299792.458),
+#     wid2=42.74*(195.11794/299792.458),
+#     n_jobs=-1
+# )
 
 recons = Rec.solve(num_realizations=1)
 # Rec.recons[0].plot_loss()

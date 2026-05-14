@@ -56,7 +56,7 @@ def create_objective(current_num_detectors):
             intenscaling=intenscaling,
             DATA_FIDELITY='L2',
             OPTIMIZER='L-BFGS-B',
-            maxiter=3000,      # Slightly lowered to accelerate parameter search
+            maxiter=10000,      # Slightly lowered to accelerate parameter search
             lam_i=1e-4,
             lam_v=lam_v,
             lam_w=lam_w,

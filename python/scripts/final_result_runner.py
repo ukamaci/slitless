@@ -7,13 +7,13 @@ import matplotlib
 matplotlib.use('Agg') # Prevents GUI crashes when generating hundreds of plots
 import matplotlib.pyplot as plt
 from slitless.forward import Imager
-from slitless.recon import scipy_solver_parallel, smart2, nn_solver, Reconstructor_Multi
+from slitless.recon import scipy_solver_parallel2, smart2, nn_solver, Reconstructor_Multi
 
 # ==============================================================================
 # 1. RUN CONFIGURATION
 # ==============================================================================
 # Choose the method to evaluate: '1dmap', 'mart', or 'unet'
-METHOD = 'mart'
+METHOD = '1dmap'
 
 # The test dataset to use
 DATA_FILE = 'eis_test_100_dsetv5.npy'
@@ -38,13 +38,13 @@ CONFIGS = [
 # --- 1D MAP (scipy_solver_parallel) ---
 # NOTE: 1D MAP doesn't use the background components, so it just needs lam_v and lam_w
 OPTIMAL_PARAMS_1DMAP = {
-    (2, None): {'lam_v': 1e4, 'lam_w': 1e4},
-    (3, None): {'lam_v': 1e4, 'lam_w': 1e4},
-    (4, None): {'lam_v': 1e4, 'lam_w': 1e4},
-    (5, None): {'lam_v': 1e4, 'lam_w': 1e4},
-    (3, 10):   {'lam_v': 1e4, 'lam_w': 1e4},
-    (3, 20):   {'lam_v': 1e4, 'lam_w': 1e4},
-    (3, 30):   {'lam_v': 1e4, 'lam_w': 1e4},
+    (2, None): {'lam_v': 7.1e4, 'lam_w': 1.3e5},
+    (3, None): {'lam_v': 5.1e5, 'lam_w': 1.0e6},
+    (4, None): {'lam_v': 7.3e5, 'lam_w': 1.5e6},
+    (5, None): {'lam_v': 1.1e6, 'lam_w': 2.4e6},
+    (3, 10):   {'lam_v': 1.2e7, 'lam_w': 2.6e8},
+    (3, 20):   {'lam_v': 1.2e7, 'lam_w': 3.7e7},
+    (3, 30):   {'lam_v': 5.9e6, 'lam_w': 7.2e6},
 }
 
 # --- MART (smart2) ---
@@ -68,13 +68,13 @@ SMART2_PRIOR_PARAMS = {
 # --- U-Net (nn_solver) ---
 # Put the exact folder names of your trained U-Net models for each configuration
 UNET_MODEL_PATHS = {
-    (2, None): 'model_k2_noiseless_dir_name',
-    (3, None): 'model_k3_noiseless_dir_name',
-    (4, None): 'model_k4_noiseless_dir_name',
-    (5, None): 'model_k5_noiseless_dir_name',
-    (3, 10):   'model_k3_dbsnr10_dir_name',
-    (3, 20):   'model_k3_dbsnr20_dir_name',
-    (3, 30):   'model_k3_dbsnr30_dir_name',
+    (2, None): '2026_05_11__17_27_34_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_2_eis_v5',
+    (3, None): '2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5',
+    (4, None): '2026_05_11__17_27_59_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_4_eis_v5',
+    (5, None): '2026_05_11__17_29_26_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_5_eis_v5',
+    (3, 10):   '2026_05_13__05_02_23_NF_64_BS_4_LR_0.0002_EP_100_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_10_poisson_K_3_eis_v5',
+    (3, 20):   '2026_05_13__05_05_48_NF_64_BS_4_LR_0.0002_EP_100_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_20_poisson_K_3_eis_v5',
+    (3, 30):   '2026_05_13__05_06_25_NF_64_BS_4_LR_0.0002_EP_100_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_30_poisson_K_3_eis_v5',
 }
 
 # ==============================================================================
@@ -124,7 +124,7 @@ def run_all_configs():
         # 2. Setup Solver specific arguments
         kwargs = {}
         if METHOD == '1dmap':
-            solver = scipy_solver_parallel
+            solver = scipy_solver_parallel2
             kwargs = {
                 'OPTIMIZER': 'L-BFGS-B',
                 'DATA_FIDELITY': 'L2',
