@@ -127,12 +127,12 @@ def train_net(net,
 
 if __name__ == '__main__':
     # ---------
-    numdetectors = 5
+    numdetectors = 3
     NUM_FILT = 64
     numlayers = 4
     LR = 2e-4
     # LR= 0.01
-    EPOCHS = 400
+    EPOCHS = 100
     BATCH_SIZE = 4
     BILINEAR = True
     ksizes = [(3,1)]
@@ -145,15 +145,15 @@ if __name__ == '__main__':
     LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
     OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
-    LOAD = False
+    LOAD = True
     otf = None # on the fly trainset generation 
-    loaded_model_path = '../results/saved/2026_03_15__14_04_59_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_5_eis_v4/best_model.pth'
+    loaded_model_path = '../results/saved/2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5/best_model.pth'
     # dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
     dataset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
     testset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
-    dbsnr = 100
-    # noise_model = 'poisson'
-    noise_model = None
+    dbsnr = 30
+    noise_model = 'poisson'
+    # noise_model = None
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
     name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
