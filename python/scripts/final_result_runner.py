@@ -7,13 +7,13 @@ import matplotlib
 matplotlib.use('Agg') # Prevents GUI crashes when generating hundreds of plots
 import matplotlib.pyplot as plt
 from slitless.forward import Imager
-from slitless.recon import scipy_solver_parallel2, smart2, nn_solver, Reconstructor_Multi
+from slitless.recon import scipy_solver_parallel2, smart2, smart2_twostage, nn_solver, Reconstructor_Multi
 
 # ==============================================================================
 # 1. RUN CONFIGURATION
 # ==============================================================================
 # Choose the method to evaluate: '1dmap', 'mart', or 'unet'
-METHOD = '1dmap'
+METHOD = 'mart'
 
 # The test dataset to use
 DATA_FILE = 'eis_test_100_dsetv5.npy'
@@ -134,7 +134,7 @@ def run_all_configs():
             kwargs.update(OPTIMAL_PARAMS_1DMAP[(K, dbsnr)])
             
         elif METHOD == 'mart':
-            solver = smart2
+            solver = smart2_twostage
             kwargs = SMART2_PRIOR_PARAMS.copy()
             
         elif METHOD == 'unet':

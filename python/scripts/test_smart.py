@@ -5,103 +5,78 @@ from slitless.recon import smart2
 path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 data = np.load(path_data + 'eis_train_50_dsetv5.npy', allow_pickle=True).item()
 
-samples = range(len(data['param3d']))
-M = 64
-L = 21
-DISP = 0.022275
-C = 299792.458
-RW = 195.117937907451
-WC = 195.119
-
-Imgr = Imager(pixelated=True, spectral_orders=[0, -1, 1], intenscale=1)
-
-vel_two = []
-wid_two = []
-vel_edges_two = []
-vel_center_two = []
-wid_edges_two = []
-wid_center_two = []
-
-CENT1 = -1.13*(195.11794/299792.458)+195.119
-WID_PIX = 42.74*(195.11794/299792.458) / DISP
-FRAC1 = 0.8555
-FRAC2 = 0.0521
-FRAC_BG = 0.0924
+DISP = 0.022275; C = 299792.458; RW = 195.117937907451; L = 21
+WID = 42.74*(195.11794/C)
+WID_PIX = WID / DISP
+FRAC1 = 0.8555; FRAC2 = 0.0521; FRAC_BG = 0.0924
 CENT2 = 195.17803
 BG_SHAPE = np.ones(L) / L
 
-for idx in samples:
-    truth = data['param3d'][idx]
-    meas = data['meas_damped'][idx]
-    truth_wid_km = truth[2] * C / RW
+Imgr = Imager(pixelated=True, spectral_orders=[0, -1, 1], intenscale=1)
 
-    Imgr.meas3dar_nn = meas[:3]
-    Imgr.meas3dar = meas[:3]
+def cent1_from_vel(v_km_s):
+    return RW * (1 + v_km_s / C)
 
-    # Stage 1: pw=0, default const init
-    recon1, _ = smart2(
-        imager=Imgr, fitter='mpfit', psi=0.2, maxouter=5, maxinner=20,
-        prior_weight=0,
-        cent1=CENT1, wid1=WID_PIX*DISP, wid2=WID_PIX*DISP,
-        n_jobs=-1,
-    )
+results = {}
+for cent1_vel in [-1, -4]:
+    label = f'cent1={cent1_vel:+d}'
+    vel_all = []; wid_all = []; ve_edges = []; vc_center = []; we_edges = []; wc_center = []
 
-    # Build 3-component init_cube using stage-1 velocity
-    int0 = meas[0]
-    vel2_offset = (CENT2 - CENT1) / DISP  # pixel separation between lines
+    cent1 = cent1_from_vel(cent1_vel)
 
-    v1_0 = recon1[1]
-    w1_0 = WID_PIX * np.ones_like(int0)
-    cube1 = datacube_generator(np.stack((int0 * FRAC1, v1_0, w1_0), axis=0), lamdim=L)
+    for idx in range(len(data['param3d'])):
+        truth = data['param3d'][idx]; meas = data['meas_damped'][idx]
+        Imgr.meas3dar_nn = meas[:3]; Imgr.meas3dar = meas[:3]
 
-    v2_0 = v1_0 + vel2_offset
-    w2_0 = WID_PIX * np.ones_like(int0)
-    cube2 = datacube_generator(np.stack((int0 * FRAC2, v2_0, w2_0), axis=0), lamdim=L)
+        recon1, _ = smart2(imager=Imgr, fitter='mpfit', psi=0.2,
+            maxouter=5, maxinner=20, prior_weight=0,
+            cent1=cent1, wid1=WID, wid2=WID, n_jobs=-1)
 
-    bg_cube = BG_SHAPE[:, np.newaxis, np.newaxis] * (int0 * FRAC_BG)[np.newaxis, :, :]
-    init_cube = cube1 + cube2 + bg_cube
+        int0 = meas[0]
+        vel2_off = (CENT2 - cent1) / DISP
+        v1_0 = recon1[1]; w1_0 = WID_PIX * np.ones_like(int0)
+        c1 = datacube_generator(np.stack((int0*FRAC1, v1_0, w1_0), axis=0), lamdim=L)
+        v2_0 = v1_0 + vel2_off; w2_0 = WID_PIX * np.ones_like(int0)
+        c2 = datacube_generator(np.stack((int0*FRAC2, v2_0, w2_0), axis=0), lamdim=L)
+        bg = BG_SHAPE[:,np.newaxis,np.newaxis] * (int0*FRAC_BG)[np.newaxis,:,:]
+        init_cube = c1 + c2 + bg
 
-    # Stage 2: pw=1
-    recon2, _ = smart2(
-        imager=Imgr, fitter='mpfit', psi=0.2, maxouter=5, maxinner=20,
-        prior_weight=1,
-        cent1=CENT1, wid1=WID_PIX*DISP, wid2=WID_PIX*DISP,
-        init_cube=init_cube,
-        n_jobs=-1,
-    )
-    recon2_phys = Imgr.frompix(recon2, width_unit='km/s', array=True)
+        recon2, _ = smart2(imager=Imgr, fitter='mpfit', psi=0.2,
+            maxouter=5, maxinner=20, prior_weight=1, init_cube=init_cube,
+            cent1=cent1, wid1=WID, wid2=WID, n_jobs=-1)
 
-    ve = recon2_phys[1] - truth[1]
-    we = recon2_phys[2] - truth_wid_km
-    vel_two.append([np.sqrt(np.mean(ve**2)), np.mean(ve)])
-    wid_two.append([np.sqrt(np.mean(we**2)), np.mean(we)])
+        r2 = Imgr.frompix(recon2, width_unit='km/s', array=True)
+        ve = r2[1] - truth[1]
+        we = r2[2] - truth[2] * C / RW
+        vel_all.append([np.sqrt(np.mean(ve**2)), np.mean(ve)])
+        wid_all.append([np.sqrt(np.mean(we**2)), np.mean(we)])
 
-    for region, y_slice in [('edge', [slice(0,10), slice(54,64)]), ('center', [slice(27,37)])]:
-        for sl in y_slice:
-            ve_s = ve[sl, :]
-            we_s = we[sl, :]
-            if region == 'edge':
-                vel_edges_two.append(ve_s.flatten())
-                wid_edges_two.append(we_s.flatten())
-            else:
-                vel_center_two.append(ve_s.flatten())
-                wid_center_two.append(we_s.flatten())
+        for region, ys in [('edge', [slice(0,10), slice(54,64)]), ('center', [slice(27,37)])]:
+            for sl in ys:
+                if region == 'edge':
+                    ve_edges.append(ve[sl,:].flatten())
+                    we_edges.append(we[sl,:].flatten())
+                else:
+                    vc_center.append(ve[sl,:].flatten())
+                    wc_center.append(we[sl,:].flatten())
 
-r = np.array(vel_two)
-w = np.array(wid_two)
-ve = np.concatenate(vel_edges_two)
-vc = np.concatenate(vel_center_two)
-we = np.concatenate(wid_edges_two)
-wc = np.concatenate(wid_center_two)
+    v = np.array(vel_all); w = np.array(wid_all)
+    results[label] = {
+        'vel_rmse': v[:,0].mean(), 'vel_bias': v[:,1].mean(),
+        'wid_rmse': w[:,0].mean(), 'wid_bias': w[:,1].mean(),
+        've': np.concatenate(ve_edges), 'vc': np.concatenate(vc_center),
+        'we': np.concatenate(we_edges), 'wc': np.concatenate(wc_center),
+    }
 
-print("\n" + "=" * 60)
-print("  TWO-STAGE SMART2 (pw=0 -> re-init -> pw=1)")
-print("=" * 60)
-print(f"  Overall:  vel RMSE={r[:,0].mean():.2f} bias={r[:,1].mean():.2f}  |  wid RMSE={w[:,0].mean():.2f} bias={w[:,1].mean():.2f} km/s")
-print(f"  Edges:    vel RMSE={np.sqrt(np.mean(ve**2)):.2f} bias={np.mean(ve):.2f}  |  wid RMSE={np.sqrt(np.mean(we**2)):.2f} bias={np.mean(we):.2f} km/s")
-print(f"  Center:   vel RMSE={np.sqrt(np.mean(vc**2)):.2f} bias={np.mean(vc):.2f}  |  wid RMSE={np.sqrt(np.mean(wc**2)):.2f} bias={np.mean(wc):.2f} km/s")
-print()
-# baselines
-print("  Single-stage baselines (from earlier):")
-print(f"  pw=1 const init: vel RMSE=7.28 bias=-0.27  |  wid RMSE=1.92 bias=-0.01")
-print(f"  pw=0 const init: vel RMSE=4.82 bias=+1.82  |  wid RMSE=15.46 bias=+15.29")
+print("\n" + "=" * 70)
+print("  TWO-STAGE SMART2: cent1 comparison (50 samples)")
+print("=" * 70)
+print(f"{'':>20} {'Vel RMSE':>8} {'Vel Bias':>8} {'Wid RMSE':>8} {'Wid Bias':>8}")
+for label in ['cent1=-1', 'cent1=-4']:
+    r = results[label]
+    print(f"  {label:>18}: {r['vel_rmse']:8.2f} {r['vel_bias']:8.2f} {r['wid_rmse']:8.2f} {r['wid_bias']:8.2f} km/s")
+
+print(f"\n  {'':>18}  {'Edge Vel':>8} {'Edge Bias':>7} {'Ctr Vel':>8} {'Ctr Bias':>7}  {'Edge Wid':>8} {'Ctr Wid':>8}")
+for label in ['cent1=-1', 'cent1=-4']:
+    r = results[label]
+    print(f"  {label:>18}: {np.sqrt(np.mean(r['ve']**2)):8.2f} {np.mean(r['ve']):7.2f} {np.sqrt(np.mean(r['vc']**2)):8.2f} {np.mean(r['vc']):7.2f}  {np.sqrt(np.mean(r['we']**2)):8.2f} {np.sqrt(np.mean(r['wc']**2)):8.2f} km/s")

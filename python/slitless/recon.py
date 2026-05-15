@@ -661,7 +661,7 @@ def smart2(
     orders = imager.spectral_orders
     orders_list = list(orders)
     if prior_weight > 0:
-        orders_list.append('inf')
+        orders_list.append('inf')  # infinite projection (column-summed spectrum)
 
     meas_list = [meas[k] for k in range(NK)]
     
@@ -681,7 +681,7 @@ def smart2(
     wid2_pix_0 = wid2 / disp_scale
 
     if init_cube is not None:
-        cube = init_cube.copy()
+        cube = init_cube.copy()  # skip 3-component initialization, use provided cube
     else:
         v1_0 = vel1_pix_0 * np.ones_like(int0)
         w1_0 = wid1_pix_0 * np.ones_like(int0)
@@ -698,9 +698,10 @@ def smart2(
         cube = cube1 + cube2 + bg_cube
 
     if prior_weight > 0:
-        infprior = np.sum(cube, axis=1)
+        infprior = np.sum(cube, axis=1)  # column-summed spectrum (L x N)
         infprior = infprior / np.clip(infprior.sum(axis=0), 1e-12, None) * meas[0].sum(axis=0)
         meas_list.append(infprior)
+    # when prior_weight=0, skip inf-prior entirely to avoid diverging chi
 
     num_projs = len(meas_list)
     
@@ -792,6 +793,79 @@ def smart2(
         recon = gauss_pmf_fitter2(cube_safe)
 
     return recon , cube * disp_scale
+
+def smart2_twostage(
+        imager=None,
+        psi=0.2,
+        maxouter=5,
+        maxinner=20,
+        prior_weight=1.0,
+        fitter='mpfit',
+        tmplt=None,
+        n_jobs=-1,
+        frac1=0.8555,
+        frac2=0.0521,
+        frac_bg=0.0924,
+        cent1=195.11803,
+        wid1=0.02907,
+        cent2=195.17803,
+        wid2=0.02907,
+        bg_shape_norm=[0.04762] * 21,
+        **kwargs,
+):
+    # Stage 1: pw=0 (no inf-prior) for better velocity, doubled iterations
+    # Stage 2: pw=1 with init_cube built from stage-1 velocity for width constraint
+    # Falls through to single-stage smart2 if prior_weight=0
+    if prior_weight == 0:
+        return smart2(
+            imager=imager, psi=psi, maxouter=maxouter, maxinner=maxinner,
+            prior_weight=0, fitter=fitter, tmplt=tmplt, n_jobs=n_jobs,
+            frac1=frac1, frac2=frac2, frac_bg=frac_bg,
+            cent1=cent1, wid1=wid1, cent2=cent2, wid2=wid2,
+            bg_shape_norm=bg_shape_norm,
+        )
+
+    recon1, _ = smart2(
+        imager=imager, psi=psi, maxouter=2*maxouter, maxinner=2*maxinner,
+        prior_weight=0, fitter=fitter, tmplt=tmplt, n_jobs=n_jobs,
+        frac1=frac1, frac2=frac2, frac_bg=frac_bg,
+        cent1=cent1, wid1=wid1, cent2=cent2, wid2=wid2,
+        bg_shape_norm=bg_shape_norm,
+    )  # stage 1: pw=0, doubled iterations for better velocity
+
+    # build 3-component init_cube using stage-1 velocity map
+    if imager is not None:
+        disp_scale = imager.dispersion_scale
+        int0 = imager.meas3dar[0].copy()
+    else:
+        disp_scale = 0.022275
+        int0 = np.zeros((64, 64))
+
+    L = 21
+    vel2_offset = (cent2 - cent1) / disp_scale
+    wid_pix = wid1 / disp_scale
+
+    v1_0 = recon1[1]
+    w1_0 = wid_pix * np.ones_like(int0)
+    cube1 = datacube_generator(np.stack((int0 * frac1, v1_0, w1_0), axis=0), lamdim=L)
+
+    v2_0 = v1_0 + vel2_offset
+    w2_0 = wid_pix * np.ones_like(int0)
+    cube2 = datacube_generator(np.stack((int0 * frac2, v2_0, w2_0), axis=0), lamdim=L)
+
+    if bg_shape_norm is None:
+        bg_shape_norm = np.ones(L) / L
+    bg_cube = np.array(bg_shape_norm)[:, np.newaxis, np.newaxis] * (int0 * frac_bg)[np.newaxis, :, :]
+    init_cube = cube1 + cube2 + bg_cube
+
+    recon2, cube = smart2(
+        imager=imager, psi=psi, maxouter=maxouter, maxinner=maxinner,
+        prior_weight=prior_weight, fitter=fitter, tmplt=tmplt, n_jobs=n_jobs,
+        init_cube=init_cube,
+        cent1=cent1, wid1=wid1, cent2=cent2, wid2=wid2,
+        bg_shape_norm=bg_shape_norm,
+    )  # stage 2: pw=1 with inf-prior, constrained by stage-1 velocity init
+    return recon2, []
 
 def grad_descent_solver(
     imager=None,
