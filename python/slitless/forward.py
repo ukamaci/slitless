@@ -616,15 +616,16 @@ class Imager():
         """
         assert source.pix == False, "Source object is already in pixel dimensions"
 
+        rest_cen = getattr(source, 'rest_wavelength', 195.117937907451)
         # Absolute wavelength of the shifted line
-        actual_wave = source.rest_wavelength * (1 + source.vel / SPEED_OF_LIGHT)
+        actual_wave = rest_cen * (1 + source.vel / SPEED_OF_LIGHT)
         # Pixel shift relative to the array's central wavelength
-        vel_pix = (actual_wave - self.mid_wavelength) / self.dispersion_scale
+        vel_pix = (actual_wave - getattr(self, 'mid_wavelength', 195.119)) / self.dispersion_scale
         self.srpix = Source(
             inten=source.inten/self.intenscale,
             vel=vel_pix,
             width=source.width/self.dispersion_scale,
-            rest_wavelength=source.rest_wavelength,
+            rest_wavelength=rest_cen,
             pix=True
         )
         return self.srpix
@@ -637,19 +638,20 @@ class Imager():
         """
         if array==False:
             assert source.pix == True, "Source object is already in physical dimensions"
+            rest_cen = getattr(source, 'rest_wavelength', 195.117937907451)
             # Wavelength of the shifted line based on pixel position
-            actual_wave = self.mid_wavelength + source.vel * self.dispersion_scale
+            actual_wave = getattr(self, 'mid_wavelength', 195.119) + source.vel * self.dispersion_scale
             # Velocity relative to the rest wavelength
-            vel_phy = SPEED_OF_LIGHT * (actual_wave - source.rest_wavelength) / source.rest_wavelength
+            vel_phy = SPEED_OF_LIGHT * (actual_wave - rest_cen) / rest_cen
             
             width_phy = source.width * self.dispersion_scale
             if width_unit == 'km/s':
-                width_phy *= SPEED_OF_LIGHT / source.rest_wavelength
+                width_phy *= SPEED_OF_LIGHT / rest_cen
             self.srphy = Source(
                 inten=source.inten*self.intenscale,
                 vel=vel_phy,
                 width=width_phy,
-                rest_wavelength=source.rest_wavelength,
+                rest_wavelength=rest_cen,
                 pix=False
             )
             return self.srphy
@@ -657,8 +659,8 @@ class Imager():
             out = source.clone() if type(source)==torch.Tensor else source.copy()
             out[...,0,:,:]*=self.intenscale
             
-            wave_cen = self.mid_wavelength if hasattr(self, 'srpix') else 195.119
-            rest_cen = self.srpix.rest_wavelength if hasattr(self, 'srpix') else 195.117937907451
+            wave_cen = getattr(self, 'mid_wavelength', 195.119)
+            rest_cen = getattr(self.srpix, 'rest_wavelength', 195.117937907451) if hasattr(self, 'srpix') else 195.117937907451
             
             actual_wavelengths = wave_cen + out[...,1,:,:] * self.dispersion_scale
             out[...,1,:,:] = SPEED_OF_LIGHT * (actual_wavelengths - rest_cen) / rest_cen
