@@ -1,6 +1,6 @@
 from slitless.forward import Source, Imager, forward_op, datacube_generator
 from slitless.plotting import uiuc_im
-from slitless.recon import (smart, smart2, grad_descent_solver, scipy_solver, scipy_solver_parallel, scipy_solver_parallel2, tomoinv,
+from slitless.recon import (smart, smart2, smart2_twostage, grad_descent_solver, scipy_solver, scipy_solver_parallel, scipy_solver_parallel2, tomoinv,
     Reconstructor, Reconstructor_Multi, nn_solver, diffusion_solver)
 import numpy as np
 import datetime, pickle, shutil, os
@@ -18,7 +18,7 @@ path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 # data='eis_5_64x64.npy' # 64x64 EIS images
 # data='diff_samples.npy' # 5 of 64x64 Diffusion generated images
 # data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
-data_file='eis_train_5_dsetv5.npy' # 64x64 EIS images
+data_file='eis_test_100_dsetv5.npy' # 64x64 EIS images
 # data='eis_train_5_dsetv4.npy' # 64x64 EIS images
 # data='eis_test_5_dsetv4.npy' # 64x64 EIS images
 # data='eis_val_5_dsetv4_old.npy' # 64x64 EIS images
@@ -37,7 +37,7 @@ data = np.load(path_data+data_file, allow_pickle=True).item()
 # param4dar, meas4dar = data['param3d'], data['meas']
 # param4dar, meas4dar = data['param3d'], data['meas']
 param4dar, meas4dar = data['param3d'], data['meas_damped']
-# param4dar, meas4dar = data['param3d'][[2]], data['meas_damped'][[2]]
+# param4dar, meas4dar = data['param3d'][[3]], data['meas_damped'][[3]]
 source_pix = False
 intenscaling = False
 # meas4dar=None
@@ -46,7 +46,7 @@ savepath = '/home/kamo/resources/slitless/python/results/recons/'
 save = False
 M = param4dar.shape[-1]
 numdetectors = 3
-dbsnr = 30
+dbsnr = 10
 noise_model=None # Noise-free measurements
 # noise_model='poisson'
 # noise_model='gaussian'
@@ -79,29 +79,29 @@ Imgr = Imager(pixelated=True, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise
 #     lam_w=2e9
 # )
 
-# SCIPY
-Rec = Reconstructor_Multi(
-    imager=Imgr,
-    param4dar=param4dar,
-    meas4dar=meas4dar,
-    pix=source_pix,
-    solver=scipy_solver_parallel2,
-    intenscaling=intenscaling,
-    DATA_FIDELITY='L2',
-    OPTIMIZER='L-BFGS-B',
-    maxiter=10000,
-    lam_i=1e-4,
-    lam_v=5e5,
-    lam_w=1e6,
-    frac1=0.8620,
-    frac2=0.0521,
-    frac_bg=0.0860,
-    cent1=195.11723,
-    wid1=0.02981,
-    cent2=195.17723,
-    wid2=0.02981,
-    bg_shape_norm=[0.04762] * 21
-)
+# # SCIPY
+# Rec = Reconstructor_Multi(
+#     imager=Imgr,
+#     param4dar=param4dar,
+#     meas4dar=meas4dar,
+#     pix=source_pix,
+#     solver=scipy_solver_parallel2,
+#     intenscaling=intenscaling,
+#     DATA_FIDELITY='L2',
+#     OPTIMIZER='L-BFGS-B',
+#     maxiter=10000,
+#     lam_i=1e4,
+#     lam_v=1.2e-1,
+#     lam_w=2.6e-2,
+#     frac1=0.8620,
+#     frac2=0.0521,
+#     frac_bg=0.0860,
+#     cent1=195.11723,
+#     wid1=0.02981,
+#     cent2=195.17723,
+#     wid2=0.02981,
+#     bg_shape_norm=[0.04762] * 21
+# )
 
 # Tomoinv
 # Rec = Reconstructor_Multi(
@@ -132,19 +132,19 @@ Rec = Reconstructor_Multi(
 #     LR=5e-2
 # )
 
-# # U-Net
-# Rec = Reconstructor_Multi(
-#     imager=Imgr,
-#     meas4dar=meas4dar,
-#     param4dar=param4dar,
-#     pix=source_pix,
-#     solver=nn_solver,
-#     intenscaling=intenscaling,
-#     # model_path='dbsnr_50_poisson_K_3_dssize_full',
-#     # model_path='2024_08_25__10_49_50_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_15_poisson_K_3_dssize_full'
-#     model_path='2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5'
-#     # model_path='dbsnr_15_poisson_K_3_eis_v4'
-# )
+# U-Net
+Rec = Reconstructor_Multi(
+    imager=Imgr,
+    meas4dar=meas4dar,
+    param4dar=param4dar,
+    pix=source_pix,
+    solver=nn_solver,
+    intenscaling=intenscaling,
+    # model_path='dbsnr_50_poisson_K_3_dssize_full',
+    model_path='2026_05_15__01_06_51_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_30_None_K_3_eis_v5'
+    # model_path='2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5'
+    # model_path='dbsnr_15_poisson_K_3_eis_v4'
+)
 
 # # Diffusion DPS
 # Rec = Reconstructor_Multi(
@@ -163,13 +163,13 @@ Rec = Reconstructor_Multi(
 #     meas4dar=meas4dar,
 #     param4dar=param4dar,
 #     pix=source_pix,
-#     solver=smart2,
+#     solver=smart2_twostage,
 #     fitter='mpfit',
 #     intenscaling=intenscaling,
 #     psi=0.2,
 #     maxouter=5,
-#     maxinner=50,
-#     prior_weight=0,
+#     maxinner=20,
+#     prior_weight=1,
 #     cent1=-1.13*(195.11794/299792.458)+195.11803,
 #     wid1=42.74*(195.11794/299792.458),
 #     wid2=42.74*(195.11794/299792.458),
