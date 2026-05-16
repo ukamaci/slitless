@@ -160,16 +160,3 @@ def generate_horizontal_lines(size=100, num_lines=5, line_width=3, sigma=1):
     arr = cv2.GaussianBlur(arr, (5, 5), sigmaX=sigma, sigmaY=sigma)
     
     return arr
-
-def comparison_sweep(*, methods=None, parameter=None, swept_param=None, metric=None,
-array=None, swept_arr=None):
-    markers = ['s','d','o']
-    fig = plt.figure(figsize=(3.2,2.4))
-    for i, method in enumerate(methods):
-        plt.plot(swept_arr, array[i], label=method, marker=markers[i], linestyle='dashed')
-    plt.xlabel(swept_param)
-    plt.ylabel('{} {}'.format(parameter,metric))
-    plt.legend()
-    plt.grid(which='both', axis='both')
-    plt.tight_layout()
-    return fig

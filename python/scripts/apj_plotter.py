@@ -1,190 +1,66 @@
 import matplotlib.pyplot as plt
-from slitless.plotting import comparison_sweep
 import numpy as np
 
 savepath = '/home/kamo/resources/slitless/figures/apj2024_plots/'
 
-def get_metric_comp_plots(save=False):
-    a=       [0.011 , 0.009 , 3.030 , 2.268 , 2.462 , 1.961]
-    a.extend([0.011 , 0.009 , 3.102 , 2.450 , 2.672 , 2.252])
-    a.extend([0.010 , 0.008 , 2.343 , 1.758 , 1.836 , 1.400])
-    a.extend([0.011 , 0.009 , 2.478 , 1.835 , 2.591 , 2.002])
-    a.extend([0.011 , 0.008 , 2.642 , 2.095 , 2.688 , 2.271])
-    a.extend([0.010 , 0.008 , 1.578 , 1.235 , 1.577 , 1.222])
-    a.extend([0.011 , 0.009 , 2.171 , 1.593 , 2.489 , 1.943])
-    a.extend([0.010 , 0.008 , 2.404 , 1.920 , 2.731 , 2.326])
-    a.extend([0.009 , 0.007 , 1.449 , 1.131 , 1.548 , 1.205])
-    a.extend([0.011 , 0.008 , 1.826 , 1.341 , 2.377 , 1.851])
-    a.extend([0.010 , 0.008 , 2.224 , 1.771 , 2.787 , 2.400])
-    a.extend([0.009 , 0.007 , 1.267 , 0.988 , 1.493 , 1.169])
+def get_recon_comp_figures_final(idx_im=13, config='K_3_dbsnr_10', save=False):
+    SPEED_OF_LIGHT = 299792.458
+    base = '/home/kamo/resources/slitless/python/results/recons/'
 
-    ar_k = np.array(a).reshape(-1,6)
+    # Translate K_X_dbsnr_Y -> actual folder name (K_X_poisson_dbsnr_Y or K_X_None_dbsnr_None)
+    K_str    = config[2 : config.index('_dbsnr_')]
+    dbsnr_str = config[config.index('_dbsnr_') + 7:]
+    noise_seg = 'None' if dbsnr_str == 'None' else 'poisson'
+    folder = f'K_{K_str}_{noise_seg}_dbsnr_{dbsnr_str}'
 
-    a=       [0.018 , 0.014 , 3.272 , 2.513 , 2.346 , 1.851]
-    a.extend([0.035 , 0.028 , 4.372 , 3.459 , 3.499 , 2.779])
-    a.extend([0.016 , 0.012 , 2.681 , 2.011 , 2.121 , 1.626]) 
-    a.extend([0.012 , 0.009 , 2.923 , 2.231 , 2.378 , 1.865]) 
-    a.extend([0.021 , 0.017 , 3.246 , 2.575 , 2.960 , 2.420]) 
-    a.extend([0.014 , 0.010 , 2.157 , 1.677 , 1.930 , 1.507]) 
-    a.extend([0.011 , 0.009 , 2.478 , 1.835 , 2.591 , 2.002]) 
-    a.extend([0.011 , 0.008 , 2.642 , 2.095 , 2.688 , 2.271]) 
-    a.extend([0.010 , 0.008 , 1.578 , 1.235 , 1.577 , 1.222]) 
-    a.extend([0.006 , 0.004 , 1.748 , 1.285 , 2.257 , 1.789]) 
-    a.extend([0.005 , 0.004 , 2.456 , 1.947 , 2.617 , 2.241]) 
-    a.extend([0.007 , 0.005 , 1.218 , 0.951 , 1.429 , 1.107]) 
+    Rec_unet  = np.load(base + f'2026_05_13__14_19_03_final_runner_UNET/{folder}/Rec.pickle',  allow_pickle=True)
+    Rec_map1d = np.load(base + f'2026_05_13__22_56_48_final_runner_1DMAP/{folder}/Rec.pickle', allow_pickle=True)
+    Rec_mart  = np.load(base + f'2026_05_14__16_11_47_final_runner_MART/{folder}/Rec.pickle',  allow_pickle=True)
 
-    ar_snr = np.array(a).reshape(-1,6)
-
-    parameters = ['Intensity','Intensity','Velocity','Velocity','Line Width','Line Width']
-    metrics = ['RMSE','MAE','RMSE (km/s)','MAE (km/s)','RMSE (km/s)','MAE (km/s)']
-
-    for i in range(6):
-        fig = comparison_sweep(
-            methods=['1D MAP', 'MART', 'U-Net'],
-            parameter=parameters[i],
-            swept_param='K (Num. of Orders)',
-            metric=metrics[i],
-            array=ar_k[:,i].reshape(4,3).T,
-            swept_arr=[2,3,4,5]
-        )
-        if save==True:
-            fig.savefig(savepath+'K_{}_{}.png'.format(parameters[i],metrics[i][:4]), transparent=True, dpi=300)
-
-    # ############### NOISE SWEEP #################
-
-    for i in range(6):
-        fig = comparison_sweep(
-            methods=['1D MAP', 'MART', 'U-Net'],
-            parameter=parameters[i],
-            swept_param=r'$\gamma$'+' (SNR)',
-            metric=metrics[i],
-            array=ar_snr[:,i].reshape(4,3).T,
-            swept_arr=['15', '25', '50', '100']
-        )
-        if save==True:
-            fig.savefig(savepath+'SNR_{}_{}.png'.format(parameters[i],metrics[i][:4]), transparent=True, dpi=300)
-
-def get_recon_comp_figures_phy(save=False):
-    # file = '/home/kamo/resources/slitless/python/results/recons/2024_08_22__20_39_21_smart_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
-    file = '/home/kamo/resources/slitless/python/results/recons/2026_03_28__15_58_59_smart_eis_test_5_dsetv4_K_3_None_dbsnr_10/Rec.pickle'
-    idx_im = 4
     idx_n = 0
-    Rec_mart = np.load(file, allow_pickle=True)
-    rec_mart = Rec_mart.recons[idx_im].recon[idx_n]
-    Rec_mart.imager.intenscale=Rec_mart.sources[idx_im].param3d[0].max()
-    rec_mart = Rec_mart.imager.frompix(rec_mart, width_unit='km/s', array=True)
-    # file = '/home/kamo/resources/slitless/python/results/recons/2024_08_23__02_40_34_scipy_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
-    file = '/home/kamo/resources/slitless/python/results/recons/2026_03_28__15_59_46_scipy_solver_parallel_eis_test_5_dsetv4_K_3_None_dbsnr_10/Rec.pickle'
-    Rec_map1d = np.load(file, allow_pickle=True)
-    rec_map1d = Rec_map1d.recons[idx_im].recon[idx_n]
-    Rec_map1d.imager.intenscale=Rec_map1d.sources[idx_im].param3d[0].max()
-    rec_map1d = Rec_map1d.imager.frompix(rec_map1d, width_unit='km/s', array=True)
-    # file = '/home/kamo/resources/slitless/python/results/recons/2024_09_02__13_13_27_nn_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
-    file = '/home/kamo/resources/slitless/python/results/recons/2026_04_28__23_05_46_nn_solver_eis_test_5_dsetv4_K_3_None_dbsnr_100/Rec.pickle'
-    Rec_unet = np.load(file, allow_pickle=True)
-    rec_unet = Rec_unet.recons[idx_im].recon[idx_n]
-    Rec_unet.imager.intenscale=Rec_unet.sources[idx_im].param3d[0].max()
-    rec_unet = Rec_unet.imager.frompix(rec_unet, width_unit='km/s', array=True)
-    true = Rec_unet.sources[idx_im].param3d
-    true[2] *= 299792.458 / Rec_unet.sources[idx_im].rest_wavelength
-    # true = Rec_unet.imager.frompix(true, width_unit='km/s', array=True)
+    rec_unet  = Rec_unet.imager.frompix(Rec_unet.recons[idx_im].recon[idx_n],   width_unit='km/s', array=True)
+    rec_map1d = Rec_map1d.imager.frompix(Rec_map1d.recons[idx_im].recon[idx_n], width_unit='km/s', array=True)
+    rec_mart  = Rec_mart.imager.frompix(Rec_mart.recons[idx_im].recon[idx_n],   width_unit='km/s', array=True)
 
-    recs = [true, rec_unet, rec_map1d, rec_mart]
-    titles = ['True', 'U-Net', '1D MAP', 'MART']
+    true = Rec_unet.sources[idx_im].param3d.copy()
+    rest_wl = getattr(Rec_unet.sources[idx_im], 'rest_wavelength', 195.117937907451)
+    true[2] = true[2] * SPEED_OF_LIGHT / rest_wl  # Angstroms -> km/s
 
-    fig, ax = plt.subplots(3, 4, figsize=(10,7), gridspec_kw={"width_ratios": [1, 1, 1, 1]})
-    for i in range(4):
-        im = ax[0,i].imshow(recs[i][0], vmin=true[0].min(), vmax=true[0].max(), cmap='hot')
-        ax[0,i].axes.get_xaxis().set_visible(False)
-        ax[0,i].axes.get_yaxis().set_visible(False)
-        # if i==3:
-        #     fig.colorbar(im, ax=ax[0,i])
-        im = ax[1,i].imshow(recs[i][1], vmin=true[1].min(), vmax=true[1].max(), cmap='seismic')
-        ax[1,i].axes.get_xaxis().set_visible(False)
-        ax[1,i].axes.get_yaxis().set_visible(False)
-        # if i==3:
-        #     fig.colorbar(im, ax=ax[1,i])
-        im = ax[2,i].imshow(recs[i][2], vmin=true[2].min(), vmax=true[2].max(), cmap='plasma')
-        ax[2,i].axes.get_xaxis().set_visible(False)
-        ax[2,i].axes.get_yaxis().set_visible(False)
-        # if i==3:
-        #     fig.colorbar(im, ax=ax[2,i])
+    recs         = [true, rec_unet, rec_map1d, rec_mart]
+    titles       = ['Ground Truth', 'U-Net', '1D MAP', 'MART']
+    cmaps        = ['hot', 'seismic', 'plasma']
+    param_names  = ['Intensity', 'Velocity', 'Line Width']
+    param_units  = ['[erg/cm²/s/sr]', '[km/s]', '[km/s]']
 
-    # Add colorbars
-    cbar_ax1 = fig.add_axes([0.895, 0.673, 0.02, 0.305])  # Adjust the position and size
-    cbar_ax2 = fig.add_axes([0.895, 0.348, 0.02, 0.305])
-    cbar_ax3 = fig.add_axes([0.895, 0.021, 0.02, 0.305])
+    fig, ax = plt.subplots(3, 4, figsize=(10, 7))
+    for row in range(3):
+        vmin, vmax = true[row].min(), true[row].max()
+        for col in range(4):
+            ax[row, col].imshow(recs[col][row], vmin=vmin, vmax=vmax, cmap=cmaps[row])
+            ax[row, col].set_xticks([])
+            ax[row, col].set_yticks([])
+            if row == 0:
+                ax[row, col].set_title(titles[col], fontsize=15)
+        # Parameter name (large) in the upper half, units (small) in the lower half
+        ax[row, 0].set_ylabel(param_names[row], fontsize=15)
+        ax[row, 0].yaxis.set_label_coords(-0.11, 0.53)
+        ax[row, 0].text(-0.06, 0.53, param_units[row],
+            transform=ax[row, 0].transAxes,
+            fontsize=9, ha='center', va='center', rotation=90)
 
-    fig.colorbar(ax[0, 0].images[0], cax=cbar_ax1, orientation='vertical')
-    fig.colorbar(ax[1, 0].images[0], cax=cbar_ax2, orientation='vertical')
-    fig.colorbar(ax[2, 0].images[0], cax=cbar_ax3, orientation='vertical')
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+    fig.canvas.draw()  # needed so get_position() returns post-layout values
 
-    plt.tight_layout(rect=[0, 0, 0.9, 1])  # Leave space for colorbars
-
-    # plt.tight_layout()
+    cbar_width = 0.02
+    cbar_pad   = 0.01
+    for row in range(3):
+        pos = ax[row, -1].get_position()
+        cbar_ax = fig.add_axes([pos.x1 + cbar_pad, pos.y0, cbar_width, pos.height])
+        fig.colorbar(ax[row, 0].images[0], cax=cbar_ax, orientation='vertical')
     plt.show()
-    if save==True:
-        fig.savefig(savepath+'recons_phy.png', transparent=True, dpi=300)
-
-def get_recon_comp_figures(save=False):
-    file = '/home/kamo/resources/slitless/python/results/recons/2024_08_22__20_39_21_smart_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
-    idx_im = 0
-    idx_n = 0
-    Rec_mart = np.load(file, allow_pickle=True)
-    rec_mart = Rec_mart.recons[idx_im].recon[idx_n]
-    file = '/home/kamo/resources/slitless/python/results/recons/2024_08_23__02_40_34_scipy_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
-    Rec_map1d = np.load(file, allow_pickle=True)
-    rec_map1d = Rec_map1d.recons[idx_im].recon[idx_n]
-    file = '/home/kamo/resources/slitless/python/results/recons/2024_09_02__13_13_27_nn_solver_eis_5_64x64_K_3_poisson_dbsnr_25/Rec.pickle'
-    Rec_unet = np.load(file, allow_pickle=True)
-    rec_unet = Rec_unet.recons[idx_im].recon[idx_n]
-    true = Rec_unet.sources[idx_im].param3d
-
-    print('RMSE U-Net: {}'.format(Rec_unet.rmse_phy.mean(axis=(0,1))))
-    print('RMSE 1D MAP: {}'.format(Rec_map1d.rmse_phy.mean(axis=(0,1))))
-    print('RMSE MART: {}'.format(Rec_mart.rmse_phy.mean(axis=(0,1))))
-
-    print('SSIM U-Net: {}'.format(Rec_unet.ssim.mean(axis=(0,1))))
-    print('SSIM 1D MAP: {}'.format(Rec_map1d.ssim.mean(axis=(0,1))))
-    print('SSIM MART: {}'.format(Rec_mart.ssim.mean(axis=(0,1))))
-
-    recs = [true, rec_unet, rec_map1d, rec_mart]
-    titles = ['True', 'U-Net', '1D MAP', 'MART']
-
-    fig, ax = plt.subplots(3, 4, figsize=(10,7), gridspec_kw={"width_ratios": [1, 1, 1, 1]})
-    for i in range(4):
-        im = ax[0,i].imshow(recs[i][0], vmin=true[0].min(), vmax=true[0].max(), cmap='hot')
-        ax[0,i].axes.get_xaxis().set_visible(False)
-        ax[0,i].axes.get_yaxis().set_visible(False)
-        # if i==3:
-        #     fig.colorbar(im, ax=ax[0,i])
-        im = ax[1,i].imshow(recs[i][1], vmin=true[1].min(), vmax=true[1].max(), cmap='seismic')
-        ax[1,i].axes.get_xaxis().set_visible(False)
-        ax[1,i].axes.get_yaxis().set_visible(False)
-        # if i==3:
-        #     fig.colorbar(im, ax=ax[1,i])
-        im = ax[2,i].imshow(recs[i][2], vmin=true[2].min(), vmax=true[2].max(), cmap='plasma')
-        ax[2,i].axes.get_xaxis().set_visible(False)
-        ax[2,i].axes.get_yaxis().set_visible(False)
-        # if i==3:
-        #     fig.colorbar(im, ax=ax[2,i])
-
-    # Add colorbars
-    cbar_ax1 = fig.add_axes([0.895, 0.673, 0.02, 0.305])  # Adjust the position and size
-    cbar_ax2 = fig.add_axes([0.895, 0.348, 0.02, 0.305])
-    cbar_ax3 = fig.add_axes([0.895, 0.021, 0.02, 0.305])
-
-    fig.colorbar(ax[0, 0].images[0], cax=cbar_ax1, orientation='vertical')
-    fig.colorbar(ax[1, 0].images[0], cax=cbar_ax2, orientation='vertical')
-    fig.colorbar(ax[2, 0].images[0], cax=cbar_ax3, orientation='vertical')
-
-    plt.tight_layout(rect=[0, 0, 0.9, 1])  # Leave space for colorbars
-
-    # plt.tight_layout()
-    plt.show()
-    if save==True:
-        fig.savefig(savepath+'recons.png', transparent=True, dpi=300)
-
+    if save:
+        fig.savefig(savepath + 'recons_final.png', transparent=True, dpi=300)
+    return fig
 
 def loaderr(x='rec_d_10'):
     file = f'/home/kamo/resources/slitless/python/scripts/basp25figs/{x}.pickle'
@@ -301,8 +177,10 @@ def fig3(save=False):
 
     return recs_
 
-savepath = '/home/kamo/resources/slitless/figures/apj26_post_revision/'
-# recs = fig3(save=False)
-# get_metric_comp_plots(save=False)
-# get_recon_comp_figures(save=False)
-get_recon_comp_figures_phy(save=True)
+if __name__ == '__main__':
+    savepath = '/home/kamo/resources/slitless/figures/apj26_post_revision/'
+    get_recon_comp_figures_final(
+        idx_im=4, 
+        config='K_3_dbsnr_None', 
+        save=True
+    )
