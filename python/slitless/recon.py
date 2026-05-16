@@ -865,7 +865,7 @@ def smart2_twostage(
         cent1=cent1, wid1=wid1, cent2=cent2, wid2=wid2,
         bg_shape_norm=bg_shape_norm,
     )  # stage 2: pw=1 with inf-prior, constrained by stage-1 velocity init
-    return recon2, []
+    return recon2, cube
 
 def grad_descent_solver(
     imager=None,
@@ -1174,10 +1174,10 @@ def _worker_scipy_col2(x0, meas_slice, mask_slice, lam_i, lam_v, lam_w,
 def scipy_solver_parallel2(
     imager=None,
     OPTIMIZER='L-BFGS-B',
-    DATA_FIDELITY='L2', 
-    lam_i=5e2, 
-    lam_v=5e2, 
-    lam_w=1e0, 
+    DATA_FIDELITY='L2',
+    lam_i=5e2,
+    lam_v=5e2,
+    lam_w=1e0,
     maxiter=10000,
     n_jobs=-1,
     frac1=0.8620,
@@ -1187,7 +1187,8 @@ def scipy_solver_parallel2(
     wid1=0.02981,
     cent2=195.17723,
     wid2=0.02981,
-    bg_shape_norm=[0.04762] * 21
+    bg_shape_norm=[0.04762] * 21,
+    return_full=False
     ):
 
     meas = imager.meas3dar.copy()
@@ -1246,10 +1247,10 @@ def scipy_solver_parallel2(
         delayed(_worker_scipy_col2)(*t) for t in tasks
     )
     
-    # Return only the primary Gaussian parameters (int1, vel1, width1)
-    rec = np.zeros((3,aa,bb))
+    n_out = 7 if return_full else 3
+    rec = np.zeros((n_out, aa, bb))
     for i, res_x in enumerate(results):
-        rec[:,:,i] = res_x.reshape(7,aa)[:3, :]
+        rec[:, :, i] = res_x.reshape(7, aa)[:n_out, :]
 
     losses = []
     return rec, losses
