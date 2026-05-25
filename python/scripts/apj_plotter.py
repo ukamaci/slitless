@@ -1,10 +1,17 @@
+import glob
+import os
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import scienceplots  # noqa: F401  — registers 'science' style with matplotlib
+import eispac
+import astropy.units as u
+from astropy.coordinates import SkyCoord
+from astropy.wcs.utils import wcs_to_celestial_frame
+from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
-from slitless.forward import gauss
+from slitless.forward import gauss, Source
 
 plt.style.use(['science', 'no-latex'])
 
@@ -21,7 +28,7 @@ def get_recon_comp_figures_final(idx_im=13, config='K_3_dbsnr_10', save=False):
     noise_seg = 'None' if dbsnr_str == 'None' else 'poisson'
     folder = f'K_{K_str}_{noise_seg}_dbsnr_{dbsnr_str}'
 
-    Rec_unet  = np.load(base + f'2026_05_13__14_19_03_final_runner_UNET/{folder}/Rec.pickle',  allow_pickle=True)
+    Rec_unet  = np.load(base + f'2026_05_18__22_03_53_final_runner_UNET_ep200/{folder}/Rec.pickle',  allow_pickle=True)
     Rec_map1d = np.load(base + f'2026_05_13__22_56_48_final_runner_1DMAP/{folder}/Rec.pickle', allow_pickle=True)
     Rec_mart  = np.load(base + f'2026_05_14__16_11_47_final_runner_MART/{folder}/Rec.pickle',  allow_pickle=True)
 
@@ -34,8 +41,8 @@ def get_recon_comp_figures_final(idx_im=13, config='K_3_dbsnr_10', save=False):
     rest_wl = getattr(Rec_unet.sources[idx_im], 'rest_wavelength', 195.117937907451)
     true[2] = true[2] * SPEED_OF_LIGHT / rest_wl  # Angstroms -> km/s
 
-    recs         = [true, rec_unet, rec_map1d, rec_mart]
-    titles       = ['Ground Truth', 'U-Net', '1D MAP', 'MART']
+    recs         = [true, rec_unet, rec_mart, rec_map1d]
+    titles       = ['Ground Truth', 'U-Net', 'MART', '1D MAP']
     cmaps        = ['hot', 'seismic', 'plasma']
     param_names  = ['Intensity', 'Velocity', 'Line Width']
     param_units  = ['[erg/cm²/s/sr]', '[km/s]', '[km/s]']
@@ -195,7 +202,8 @@ def get_spectral_comp_figure(idx_im=4, config='K_3_dbsnr_None', pixel=None, save
     noise_seg = 'None' if dbsnr_str == 'None' else 'poisson'
     folder    = f'K_{K_str}_{noise_seg}_dbsnr_{dbsnr_str}'
 
-    dir_unet  = base + f'2026_05_13__14_19_03_final_runner_UNET/{folder}/'
+    # dir_unet  = base + f'2026_05_13__14_19_03_final_runner_UNET/{folder}/'
+    dir_unet  = base + f'2026_05_18__22_03_53_final_runner_UNET_ep200/{folder}/'
     dir_map1d = base + f'2026_05_13__22_56_48_final_runner_1DMAP/{folder}/'
     dir_mart  = base + f'2026_05_14__16_11_47_final_runner_MART/{folder}/'
 
@@ -281,15 +289,14 @@ def get_spectral_comp_figure(idx_im=4, config='K_3_dbsnr_None', pixel=None, save
 
 
 def get_combined_figure(idx_im=4, config='K_3_dbsnr_None', pixel=None, save=False):
-    from matplotlib.gridspec import GridSpec
-
     base = '/home/kamo/resources/slitless/python/results/recons/'
     K_str     = config[2 : config.index('_dbsnr_')]
     dbsnr_str = config[config.index('_dbsnr_') + 7:]
     noise_seg = 'None' if dbsnr_str == 'None' else 'poisson'
     folder    = f'K_{K_str}_{noise_seg}_dbsnr_{dbsnr_str}'
 
-    Rec_unet  = np.load(base + f'2026_05_13__14_19_03_final_runner_UNET/{folder}/Rec.pickle',  allow_pickle=True)
+    # Rec_unet  = np.load(base + f'2026_05_13__14_19_03_final_runner_UNET/{folder}/Rec.pickle',  allow_pickle=True)
+    Rec_unet  = np.load(base + f'2026_05_18__22_03_53_final_runner_UNET_ep200/{folder}/Rec.pickle',  allow_pickle=True)
     Rec_map1d = np.load(base + f'2026_05_13__22_56_48_final_runner_1DMAP/{folder}/Rec.pickle', allow_pickle=True)
     Rec_mart  = np.load(base + f'2026_05_14__16_11_47_final_runner_MART/{folder}/Rec.pickle',  allow_pickle=True)
 
@@ -407,6 +414,81 @@ def get_combined_figure(idx_im=4, config='K_3_dbsnr_None', pixel=None, save=Fals
     return fig
 
 
+def get_joint_scatter_figure(config='K_3_dbsnr_None', save=False):
+    base = '/home/kamo/resources/slitless/python/results/recons/'
+    K_str     = config[2 : config.index('_dbsnr_')]
+    dbsnr_str = config[config.index('_dbsnr_') + 7:]
+    noise_seg = 'None' if dbsnr_str == 'None' else 'poisson'
+    folder    = f'K_{K_str}_{noise_seg}_dbsnr_{dbsnr_str}'
+
+    # Rec_unet  = np.load(base + f'2026_05_13__14_19_03_final_runner_UNET/{folder}/Rec.pickle',  allow_pickle=True)
+    Rec_unet  = np.load(base + f'2026_05_18__22_03_53_final_runner_UNET_ep200/{folder}/Rec.pickle',  allow_pickle=True)
+    Rec_map1d = np.load(base + f'2026_05_13__22_56_48_final_runner_1DMAP/{folder}/Rec.pickle',  allow_pickle=True)
+    Rec_mart  = np.load(base + f'2026_05_14__16_11_47_final_runner_MART/{folder}/Rec.pickle',   allow_pickle=True)
+
+    truths, recs_u, recs_m, recs_r = [], [], [], []
+    for idx_im in range(len(Rec_unet.sources)):
+        if idx_im==45:
+            continue
+        rest_wl = getattr(Rec_unet.sources[idx_im], 'rest_wavelength', 195.117937907451)
+        true = Rec_unet.sources[idx_im].param3d.copy()
+        true[2] = true[2] * SPEED_OF_LIGHT / rest_wl
+
+        rec_u = Rec_unet.imager.frompix(Rec_unet.recons[idx_im].recon[0],   width_unit='km/s', array=True)
+        rec_m = Rec_map1d.imager.frompix(Rec_map1d.recons[idx_im].recon[0], width_unit='km/s', array=True)
+        rec_r = Rec_mart.imager.frompix(Rec_mart.recons[idx_im].recon[0],   width_unit='km/s', array=True)
+
+        truths.append(true.reshape(3, -1))
+        recs_u.append(rec_u.reshape(3, -1))
+        recs_m.append(rec_m.reshape(3, -1))
+        recs_r.append(rec_r.reshape(3, -1))
+
+    truth = np.concatenate(truths, axis=1)
+    recs_u = np.concatenate(recs_u, axis=1)
+    recs_m = np.concatenate(recs_m, axis=1)
+    recs_r = np.concatenate(recs_r, axis=1)
+
+    methods     = [('U-Net', recs_u), ('MART', recs_r), ('1D MAP', recs_m)]
+    param_names = ['Intensity', 'Velocity', 'Line Width']
+    param_units = [r'erg cm$^{-2}$ s$^{-1}$ sr$^{-1}$', r'km s$^{-1}$', r'km s$^{-1}$']
+
+    fig, axes = plt.subplots(3, 3, figsize=(12, 10))
+
+    for col, (method_name, rec) in enumerate(methods):
+        for row in range(3):
+            ax    = axes[row, col]
+            t     = truth[row]
+            r     = rec[row]
+            lo    = np.percentile(t, 0.1)
+            hi    = np.percentile(t, 99.9)
+            hb    = ax.hexbin(t, r, gridsize=80, mincnt=1, cmap='viridis',
+                              extent=[lo, hi, lo, hi])
+            ax.plot([lo, hi], [lo, hi], 'k--', lw=1.5, alpha=0.8)
+            ax.set_xlim(lo, hi)
+            ax.set_ylim(lo, hi)
+            r_val = np.corrcoef(t, r)[0, 1]
+            ax.text(0.04, 0.95, f'r = {r_val:.3f}', transform=ax.transAxes,
+                    fontsize=9, va='top', ha='left',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+            if row == 0:
+                ax.set_title(method_name, fontsize=13, fontweight='bold', pad=8)
+            if col == 0:
+                ax.annotate(param_names[row], xy=(-0.38, 0.5), xycoords='axes fraction',
+                            fontsize=13, fontweight='bold', ha='center', va='center',
+                            rotation=90, annotation_clip=False)
+            ax.set_ylabel(f'Estimated [{param_units[row]}]', fontsize=9)
+            ax.set_xlabel(f'True [{param_units[row]}]', fontsize=9)
+            fig.colorbar(hb, ax=ax, pad=0.02)
+
+    # plt.suptitle(f'True vs Estimated — {config}', fontsize=13, y=1.01)
+    plt.tight_layout()
+    plt.show()
+    if save:
+        fig.savefig(savepath + 'joint_scatter.png', transparent=True, dpi=300,
+                    bbox_inches='tight')
+    return fig
+
+
 def get_bar_chart_figure(save=False):
     K_vals     = [2, 3, 4, 5]
     gamma_vals = ['10', '20', '30', r'$\infty$']
@@ -414,14 +496,14 @@ def get_bar_chart_figure(save=False):
     methods    = ['U-Net', 'MART', '1D MAP']
 
     # APJ-friendly, high-contrast, colorblind-safe palette (Okabe-Ito)
-    # colors = {
-    #     'U-Net': '#0072B2',  # Strong Blue
-    #     'MART': '#D55E00',   # Vermillion / Deep Orange
-    #     '1D MAP': '#009E73'  # Teal / Strong Green
-    # }
+    colors = {
+        'U-Net': '#0072B2',  # Strong Blue
+        'MART': '#D55E00',   # Vermillion / Deep Orange
+        '1D MAP': '#009E73'  # Teal / Strong Green
+    }
     # scienceplots Bright cycle
-    _cyc   = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    colors = {'U-Net': _cyc[0], 'MART': _cyc[1], '1D MAP': _cyc[2]}
+    # _cyc   = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    # colors = {'U-Net': _cyc[0], 'MART': _cyc[1], '1D MAP': _cyc[2]}
 
     with open(savepath + 'bar_data.pickle', 'rb') as f:
         data = pickle.load(f)
@@ -475,9 +557,9 @@ def get_bar_chart_figure(save=False):
                solid_capstyle='butt', label='Bias (Inner Bar)'),
     ]
     leg1 = fig.legend(handles=method_handles, loc='upper center',
-                      bbox_to_anchor=(0.35, 0.98), ncol=3, frameon=False, fontsize=13)
+                      bbox_to_anchor=(0.35, 0.98), ncol=3, frameon=False, fontsize=14)
     fig.legend(handles=metric_handles, loc='upper center',
-               bbox_to_anchor=(0.75, 0.98), ncol=2, frameon=False, fontsize=13)
+               bbox_to_anchor=(0.75, 0.98), ncol=2, frameon=False, fontsize=14)
     fig.add_artist(leg1)
 
     plt.tight_layout(rect=[0, 0, 1, 0.92], h_pad=3.0)
@@ -487,8 +569,135 @@ def get_bar_chart_figure(save=False):
     return fig
 
 
+def get_dset_histogram_figure(save=False):
+    dset_dir   = '/home/kamo/resources/slitless/data/eis_data/datasets/dset_v5/data/'
+    disp_scale = 0.022275  # Å/pixel
+    rest_wl    = Source().rest_wavelength
+
+    ints, vels, widths = [], [], []
+    for split in ['train', 'val', 'test']:
+        for fname in os.listdir(dset_dir + split):
+            d = np.load(dset_dir + split + '/' + fname, allow_pickle=True).item()
+            ints.append(d['int'].ravel())
+            vels.append(d['vel'].ravel())
+            widths.append(d['width'].ravel())
+
+    ints   = np.concatenate(ints)
+    vels   = np.concatenate(vels)   / (SPEED_OF_LIGHT * disp_scale / rest_wl)  # km/s → pixels
+    widths = np.concatenate(widths) / disp_scale                                # Å → pixels
+
+    int_lim   = (100, 6000)
+    vel_lim   = (-1.2, 1.2)
+    width_lim = (1.0, 1.6)
+
+    fig, axes = plt.subplots(1, 3, figsize=(10, 4))
+
+    axes[0].hist(ints,   bins=30, range=int_lim,
+                 weights=np.ones_like(ints)   / len(ints)   * 100,
+                 edgecolor='black', linewidth=0.5)
+    axes[0].set_xlim(int_lim)
+    axes[0].set_xlabel(r'Intensity [erg cm$^{-2}$ s$^{-1}$ sr$^{-1}$]', fontsize=18)
+    axes[0].set_ylabel('Percentage (%)', fontsize=18)
+    axes[0].set_title('Intensity', fontsize=19)
+
+    axes[1].hist(vels,   bins=30, range=vel_lim,
+                 weights=np.ones_like(vels)   / len(vels)   * 100,
+                 edgecolor='black', linewidth=0.5)
+    axes[1].set_xlim(vel_lim)
+    axes[1].set_xlabel('Velocity [pixels]', fontsize=18)
+    axes[1].set_title('Velocity', fontsize=19)
+
+    axes[2].hist(widths, bins=30, range=width_lim,
+                 weights=np.ones_like(widths) / len(widths) * 100,
+                 edgecolor='black', linewidth=0.5)
+    axes[2].set_xlim(width_lim)
+    axes[2].set_xlabel('Line Width [pixels]', fontsize=18)
+    axes[2].set_title('Line Width', fontsize=19)
+
+    for ax in axes:
+        ax.grid(axis='both', which='both', alpha=0.4)
+        ax.tick_params(axis='both', labelsize=17)
+
+    plt.tight_layout()
+    plt.show()
+    if save:
+        fig.savefig(savepath + 'dset_histograms.png', transparent=True, dpi=300)
+    return fig
+
+
+def get_eis_fit_figure(pixel=None, lw=1.5, save=False):
+    data_filepath = '/home/kamo/resources/slitless/data/eis_data/l2/eis_20070124_181113.data.h5'
+    template_filepath = '/home/kamo/resources/slitless/data/eis_data/templates/fe_12_195_119.2c.template.h5'
+    data_dir = '/home/kamo/resources/slitless/data/eis_data/l2/'
+
+    tmplt = eispac.read_template(template_filepath)
+    data_cube = eispac.read_cube(data_filepath, tmplt.central_wave)
+
+    eis_frame = wcs_to_celestial_frame(data_cube.wcs)
+    lower_left  = [None, SkyCoord(Tx=700, Ty=-150, unit=u.arcsec, frame=eis_frame)]
+    upper_right = [None, SkyCoord(Tx=850, Ty=0,    unit=u.arcsec, frame=eis_frame)]
+    raster_cutout = data_cube.crop(lower_left, upper_right)
+
+    fit_files = glob.glob(data_dir + '*.fit.h5')
+    if fit_files:
+        fit_res = eispac.read_fit(fit_files[0])
+    else:
+        fit_res = eispac.fit_spectra(raster_cutout, tmplt, ncpu='max', unsafe_mp=True)
+        saved = eispac.save_fit(fit_res, save_dir=None)  # saves next to data file
+        print(f'Fit cached at: {saved}')
+
+    sum_inten = raster_cutout.sum_spectra().data
+
+    if pixel is not None:
+        iy, ix = pixel
+    else:
+        iy, ix = np.unravel_index(sum_inten.argmax(), sum_inten.shape)
+
+    # Arcsec coordinates of selected pixel for map marker
+    world = raster_cutout.wcs.array_index_to_world(iy, ix, 0)[1]
+    x_arcsec, y_arcsec = world.Tx.value, world.Ty.value
+
+    data_x = raster_cutout.wavelength[iy, ix, :]
+    data_y = raster_cutout.data[iy, ix, :]
+
+    fit_x, fit_y = fit_res.get_fit_profile(coords=[iy, ix], num_wavelengths=100)
+    c0_x, c0_y  = fit_res.get_fit_profile(0, coords=[iy, ix], num_wavelengths=100)
+    c1_x, c1_y  = fit_res.get_fit_profile(1, coords=[iy, ix], num_wavelengths=100)
+    c2_x, c2_y  = fit_res.get_fit_profile(2, coords=[iy, ix], num_wavelengths=100)
+
+    fig, (ax_map, ax_spec) = plt.subplots(1, 2, figsize=(6, 4), gridspec_kw={'width_ratios': [1, 2.3]})
+
+    # Left panel: summed intensity map with pixel marker
+    extent = [700, 850, -150, 0]
+    ax_map.imshow(sum_inten, origin='lower', extent=extent, cmap='hot', aspect='auto')
+    ax_map.scatter(x_arcsec, y_arcsec, marker='x', color='k', s=40, linewidths=1.5, zorder=5)
+    ax_map.set_xlabel('Solar-X [arcsec]', fontsize=12)
+    ax_map.set_ylabel('Solar-Y [arcsec]', fontsize=12)
+
+    # Right panel: spectral fit
+    ax_spec.plot(data_x, data_y, ls='', marker='o', ms=5, color='k', label='Data')
+    ax_spec.plot(fit_x, fit_y,        color='b', lw=lw, label='Combined fit')
+    ax_spec.plot(c0_x, c0_y,          color='r', lw=lw, label=fit_res.fit['line_ids'][0])
+    ax_spec.plot(c1_x, c1_y, ls='--', color='r', lw=lw, label=fit_res.fit['line_ids'][1])
+    ax_spec.plot(c2_x, c2_y,          color='g', lw=lw, label='Background')
+    ax_spec.set_xlabel(r'Wavelength [$\AA$]', fontsize=12)
+    ax_spec.set_ylabel(r'Intensity [erg cm$^{-2}$ s$^{-1}$ sr$^{-1}$ $\AA^{-1}$]', fontsize=11)
+    ax_spec.legend(fontsize=11, frameon=False, loc='upper left')
+    ax_spec.grid(axis='both', which='both', alpha=0.4)
+
+    plt.tight_layout()
+    plt.show()
+    if save:
+        fig.savefig(savepath + 'eis_fit.png', transparent=True, dpi=300)
+    return fig
+
+
 if __name__ == '__main__':
     savepath = '/home/kamo/resources/slitless/figures/apj26_post_revision/'
-    get_recon_comp_figures_final(idx_im=4, config='K_3_dbsnr_None', save=True)
+    # get_recon_comp_figures_final(idx_im=4, config='K_3_dbsnr_10', save=False)
     # get_combined_figure(idx_im=4, config='K_3_dbsnr_None', pixel=(36, 59), save=True)
-    get_bar_chart_figure(save=True)
+    # get_bar_chart_figure(save=True)
+    # get_eis_fit_figure(save=True)
+    # get_dset_histogram_figure(save=False)
+    get_joint_scatter_figure(config='K_3_dbsnr_None', save=False)
+
