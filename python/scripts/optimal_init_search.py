@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import eispac
 from eispac.core.fitting_functions import multigaussian_deviates, multigaussian
@@ -6,7 +7,35 @@ from eispac.extern.mpfit import mpfit
 from copy import deepcopy
 import matplotlib.pyplot as plt
 
+
+def fit_spectrum(wave, mean_spec_pix, DISP_SCALE_A, tmplt, n_gauss, n_poly):
+    mean_spec_phy = mean_spec_pix / DISP_SCALE_A
+    errs = np.sqrt(np.clip(mean_spec_phy, 20.0, None))
+    p_base = deepcopy(tmplt.parinfo)
+    guess = scale_guess(wave, mean_spec_phy, tmplt.template['fit'], n_gauss, n_poly)
+    for k in range(len(guess)):
+        p_base[k]['value'] = guess[k]
+    functkw = {'x': wave, 'y': mean_spec_phy, 'error': errs, 'n_gauss': n_gauss, 'n_poly': n_poly}
+    fit = mpfit(multigaussian_deviates, parinfo=p_base, functkw=functkw, quiet=1)
+    params = fit.params
+    peak1, wid1 = params[0], params[2]
+    peak2, wid2 = params[3], params[5]
+    area1 = np.sqrt(2 * np.pi) * peak1 * wid1
+    area2 = np.sqrt(2 * np.pi) * peak2 * wid2
+    bg_params = params.copy()
+    bg_params[:3*n_gauss] = 0.0
+    bg_shape = multigaussian(bg_params, wave, n_gauss, n_poly)
+    bg_sum = np.sum(bg_shape) * DISP_SCALE_A
+    total_flux = area1 + area2 + bg_sum
+    return params, area1, area2, bg_sum, total_flux
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--per-sample', action='store_true',
+                        help='Also compute fractions per sample and report the mean/std')
+    args = parser.parse_args()
+
     datasets = [
         'eis_train_5_dsetv5.npy',
         'eis_train_50_dsetv5.npy',
@@ -27,52 +56,34 @@ def main():
         
         cubes = data['datacube']
         
+        t_base = tmplt.template
+        n_gauss = t_base['n_gauss']
+        n_poly = t_base['n_poly']
+
         print("Calculating Global Mean Spectrum...")
         if cubes.ndim == 4:
             mean_spec_pix = np.mean(cubes, axis=(0,1,2))
         elif cubes.ndim == 3:
             mean_spec_pix = np.mean(cubes, axis=(0,1))
-            
+
         lamdim = len(mean_spec_pix)
-        
-        # Convert pixel intensity to physical flux density for the fitter
-        mean_spec_phy = mean_spec_pix / DISP_SCALE_A
         wave = WAVELENGTH_CENTER + DISP_SCALE_A * (np.arange(lamdim) - lamdim // 2)
-        errs = np.sqrt(np.clip(mean_spec_phy, 20.0, None))
-        
+
         print("Fitting 2-Gauss + Bkg Template to Global Mean...")
-        
-        p_base = deepcopy(tmplt.parinfo)
-        t_base = tmplt.template
-        n_gauss = t_base['n_gauss']
-        n_poly = t_base['n_poly']
-        
-        guess = scale_guess(wave, mean_spec_phy, t_base['fit'], n_gauss, n_poly)
-        for k in range(len(guess)):
-            p_base[k]['value'] = guess[k]
-            
-        functkw = {'x': wave, 'y': mean_spec_phy, 'error': errs, 'n_gauss': n_gauss, 'n_poly': n_poly}
-        fit = mpfit(multigaussian_deviates, parinfo=p_base, functkw=functkw, quiet=1)
-        
-        params = fit.params
-        peak1, cent1, wid1 = params[0], params[1], params[2]
-        peak2, cent2, wid2 = params[3], params[4], params[5]
-        
-        area1 = np.sqrt(2 * np.pi) * peak1 * wid1
-        area2 = np.sqrt(2 * np.pi) * peak2 * wid2
-        
-        bg_params = params.copy()
-        bg_params[:3*n_gauss] = 0.0
-        bg_shape = multigaussian(bg_params, wave, n_gauss, n_poly)
-        bg_sum = np.sum(bg_shape) * DISP_SCALE_A
-        
-        total_flux = area1 + area2 + bg_sum
+        params, area1, area2, bg_sum, total_flux = fit_spectrum(
+            wave, mean_spec_pix, DISP_SCALE_A, tmplt, n_gauss, n_poly)
+
+        cent1, wid1 = params[1], params[2]
+        cent2, wid2 = params[4], params[5]
         frac1 = area1 / total_flux
         frac2 = area2 / total_flux
         frac_bg = bg_sum / total_flux
-        
+
+        bg_params = params.copy()
+        bg_params[:3*n_gauss] = 0.0
+        bg_shape = multigaussian(bg_params, wave, n_gauss, n_poly)
         bg_shape_norm = bg_shape / max(np.sum(bg_shape), 1e-12)
-        
+
         print("\n" + "-"*60)
         print(f" OPTIMAL INITIALIZATIONS ({dset_file})")
         print("-"*60)
@@ -82,6 +93,29 @@ def main():
         print("bg_shape_norm = [")
         print("    " + ", ".join([f"{val:.5f}" for val in bg_shape_norm]))
         print("]")
+
+        if args.per_sample and cubes.ndim == 4:
+            print("\nComputing per-sample fractions...")
+            n_samples = cubes.shape[0]
+            fracs = np.zeros((n_samples, 3))
+            failed = 0
+            for i in range(n_samples):
+                spec_i = np.mean(cubes[i], axis=(0, 1))
+                try:
+                    _, a1, a2, bg, tot = fit_spectrum(
+                        wave, spec_i, DISP_SCALE_A, tmplt, n_gauss, n_poly)
+                    if tot > 0 and a1 > 0 and a2 > 0 and bg >= 0:
+                        fracs[i] = [a1/tot, a2/tot, bg/tot]
+                    else:
+                        fracs[i] = np.nan
+                        failed += 1
+                except Exception:
+                    fracs[i] = np.nan
+                    failed += 1
+            valid = fracs[~np.isnan(fracs[:, 0])]
+            print(f"  {len(valid)}/{n_samples} samples fitted successfully ({failed} failed/skipped)")
+            print(f"  mean  frac1={valid[:,0].mean():.4f}, frac2={valid[:,1].mean():.4f}, frac_bg={valid[:,2].mean():.4f}")
+            print(f"  std   frac1={valid[:,0].std():.4f},  frac2={valid[:,1].std():.4f},  frac_bg={valid[:,2].std():.4f}")
     
     # Calculate default template values for comparison
     lamdim = 21
