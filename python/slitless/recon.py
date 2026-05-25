@@ -53,16 +53,18 @@ class Reconstructor():
                 noise_model=self.imager.noise_model
             )
 
-            if self.simulate_meas is False:
-                self.meas_transform()
+            # meas_transform is a no-op for non-nn solvers (see its body); for
+            # nn_solver it must run regardless of simulate_meas, otherwise the
+            # U-Net is fed raw photon counts instead of the normalized values
+            # it was trained on.
+            self.meas_transform()
             t0 = time.time()
             recon, loss = self.solver(
                 imager = self.imager,
                 **self.solver_params
             )
             t1 = time.time()
-            if self.simulate_meas is False:
-                recon = self.recon_inv_transform(recon)
+            recon = self.recon_inv_transform(recon)
 
             times.append(t1-t0)
             recons.append(recon)

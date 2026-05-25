@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import datetime
 
+from slitless import data_loader as dl
+from slitless import data_loader as dl
 from slitless.data_loader import (BasicDataset, OntheflyDataset,
     meas_inv_transform, meas_transform, param_transform)
 from slitless.networks.unet import UNet
@@ -35,63 +37,64 @@ def train_net(net,
     train_rmse_over_epochs = []
     val_rmse_over_epochs = []
     best_valloss = 1e6
-    modnum = 5 if otf is not None else 1
+    modnum = 5  # log/val every N epochs
+
+    # AMP only helps on Volta+ (compute capability ≥7.0) which has real fp16
+    # tensor cores. On Pascal (e.g. TITAN Xp, cc 6.1) autocast is pure overhead.
+    use_amp = (device.type == 'cuda'
+               and torch.cuda.get_device_capability(device)[0] >= 7)
+    logging.info(f'AMP enabled: {use_amp}')
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     for epoch in tqdm(range(epochs)):  # loop over the dataset multiple times
 
         # if onthefly dataloading is active, then read the parameters from otf
-        # and create the next trainset 
+        # and create the next trainset
         if otf is True:
             trainset = OntheflyDataset(data_dir=trainloader.dataset.data_dir, fold='train', dbsnr=trainloader.dataset.dbsnr, trpart=epoch%5+1)
             trainloader = DataLoader(trainset, batch_size=trainloader.batch_size, shuffle=True, num_workers=trainloader.num_workers)
 
         net.train()
         running_loss = 0.0
-        running_rmse_train = 0.0
-        running_ssim_train = 0.0
+        last_inputs = last_true_outputs = None
         for i, data in enumerate(trainloader):
-            # get the inputs
-            inputs = data[0].to(device=device, dtype=torch.float)
-            true_outputs = data[1].to(device=device, dtype=torch.float)
+            inputs = data[0].to(device=device, dtype=torch.float, non_blocking=True)
+            true_outputs = data[1].to(device=device, dtype=torch.float, non_blocking=True)
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
-            # forward + backward + optimize
-            outputs = net(inputs)
-            loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
-            # print('Loss Calculated')
-            loss.backward()
-            # print('Backward Propagated')
-            optimizer.step()
-            # print('Optimizer Updated')
+            with torch.amp.autocast('cuda', enabled=use_amp):
+                outputs = net(inputs)
+                loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
-            # print statistics
             running_loss += loss.item()
+            last_inputs, last_true_outputs = inputs, true_outputs  # for cheap per-modnum train metric
 
-            outputs = outch_adjuster(out=outputs, true_out=true_outputs, outch_type=net.outch_type, action='extend')
-            with torch.no_grad():
-                running_rmse_train += torch.mean((true_outputs-outputs)**2, dim=(0,2,3)).cpu().numpy()
-                running_ssim_train += compare_ssim(truth=true_outputs.cpu().numpy(), estimate=outputs.detach().cpu().numpy()).mean(axis=0)
-
-        # Normalizing the loss by the total number of train batches
-        running_loss/=len(trainloader)
-        running_rmse_train/=len(trainloader)
-        running_ssim_train/=len(trainloader)
-        running_rmse_train=np.sqrt(running_rmse_train)
+        running_loss /= len(trainloader)
         logging.info('[%d] Train loss: %.7f' % (epoch + 1, running_loss))
 
         if (epoch+1)%modnum==0:
             net.eval()
+            # Single-batch train SSIM/RMSE indicator (full-epoch averaging
+            # would re-traverse the loader; this is enough to track the
+            # train-vs-val gap).
+            with torch.no_grad():
+                outputs = net(last_inputs)
+                outputs = outch_adjuster(out=outputs, true_out=last_true_outputs, outch_type=net.outch_type, action='extend')
+                running_rmse_train = torch.sqrt(torch.mean((last_true_outputs-outputs)**2, dim=(0,2,3))).cpu().numpy()
+                running_ssim_train = compare_ssim(truth=last_true_outputs.cpu().numpy(), estimate=outputs.cpu().numpy()).mean(axis=0)
+
             running_valloss = 0.0
             running_rmse_val = 0.0
             running_ssim_val = 0.0
             for i, data in enumerate(valloader):
-                # get the inputs
-                inputs = data[0].to(device=device, dtype=torch.float)
-                true_outputs = data[1].to(device=device, dtype=torch.float)
+                inputs = data[0].to(device=device, dtype=torch.float, non_blocking=True)
+                true_outputs = data[1].to(device=device, dtype=torch.float, non_blocking=True)
 
-                with torch.no_grad():
+                with torch.no_grad(), torch.amp.autocast('cuda', enabled=use_amp):
                     outputs = net(inputs)
                     loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
 
@@ -105,9 +108,9 @@ def train_net(net,
             running_ssim_val/=len(valloader)
             running_rmse_val=np.sqrt(running_rmse_val)
             logging.info('Validation loss: %.7f' % (running_valloss))
-            logging.info(['Train SSIM: ', ['{:.3f}'.format(ss) for ss in running_ssim_train]])
+            logging.info(['Train SSIM (last batch): ', ['{:.3f}'.format(ss) for ss in running_ssim_train]])
             logging.info(['Val SSIM: ', ['{:.3f}'.format(ss) for ss in running_ssim_val]])
-            logging.info(['Train RMSE: ', ['{:.4f}'.format(ss) for ss in running_rmse_train]])
+            logging.info(['Train RMSE (last batch): ', ['{:.4f}'.format(ss) for ss in running_rmse_train]])
             logging.info(['Val RMSE: ', ['{:.4f}'.format(ss) for ss in running_rmse_val]])
 
             if running_valloss < best_valloss:
@@ -132,26 +135,26 @@ if __name__ == '__main__':
     numlayers = 4
     LR = 2e-4
     # LR= 0.01
-    EPOCHS = 100
-    BATCH_SIZE = 4
+    EPOCHS = 200
+    BATCH_SIZE = 32
     BILINEAR = True
     ksizes = [(3,1)]
     OPTIMIZER = 'ADAM'
-    # LOSS = 'MSE'
-    LOSS = 'NMSE'
+    LOSS = 'MSE'
+    # LOSS = 'NMSE'
     CYC_LOSS = False
     cyc_lam = 1
     CYC_ONLY = False
     LOSS = 'CYCLE_ONLY' if CYC_ONLY else LOSS
     OUTCH = 'all'
     out_channels = 3 if OUTCH=='all' else 1
-    LOAD = True
+    LOAD = False
     otf = None # on the fly trainset generation 
     loaded_model_path = '../results/saved/2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5/best_model.pth'
     # dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
     dataset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
     testset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
-    dbsnr = 30
+    dbsnr = 10
     noise_model = 'poisson'
     # noise_model = None
 
@@ -159,7 +162,7 @@ if __name__ == '__main__':
     name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
     if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
-    name += '_eis_v5'
+    name += '_eis_v5_logzscale'
     os.mkdir('../results/saved/'+name)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -176,9 +179,10 @@ if __name__ == '__main__':
     trainset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
     valset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='val', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
     testset = BasicDataset(data_dir=testset_path, transform=meas_transform, target_transform=param_transform, fold='test', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
-    trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
-    valloader = DataLoader(valset, batch_size=32, shuffle=True, num_workers=8)
-    testloader = DataLoader(testset, batch_size=32, shuffle=True, num_workers=8)
+    loader_kw = dict(num_workers=4, persistent_workers=True, pin_memory=True)
+    trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, **loader_kw)
+    valloader = DataLoader(valset, batch_size=64, shuffle=True, **loader_kw)
+    testloader = DataLoader(testset, batch_size=64, shuffle=True, **loader_kw)
 
     # trainset = OntheflyDataset(data_dir=dataset_path, fold='train', dbsnr=dbsnr)
     # trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
@@ -248,6 +252,7 @@ if __name__ == '__main__':
     f'Number of Detectors = {numdetectors} \n',
     f'Noise Model / dbsnr = {noise_model} / {dbsnr} \n',
     f'Output Channels = {OUTCH} \n',
+    f'Int Normalization = {dl.INT_NORMALIZATION} \n',
     '\n############## Optimization Parameters ############## \n',
     f'Optimizer = {OPTIMIZER} \n',
     f'Loss = {LOSS} \n',

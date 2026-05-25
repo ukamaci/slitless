@@ -13,7 +13,7 @@ from slitless.recon import scipy_solver_parallel2, smart2, smart2_twostage, nn_s
 # 1. RUN CONFIGURATION
 # ==============================================================================
 # Choose the method to evaluate: '1dmap', 'mart', or 'unet'
-METHOD = 'mart'
+METHOD = 'unet'
 
 # The test dataset to use
 DATA_FILE = 'eis_test_100_dsetv5.npy'
@@ -68,13 +68,13 @@ SMART2_PRIOR_PARAMS = {
 # --- U-Net (nn_solver) ---
 # Put the exact folder names of your trained U-Net models for each configuration
 UNET_MODEL_PATHS = {
-    (2, None): '2026_05_11__17_27_34_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_2_eis_v5',
-    (3, None): '2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5',
-    (4, None): '2026_05_11__17_27_59_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_4_eis_v5',
-    (5, None): '2026_05_11__17_29_26_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_5_eis_v5',
-    (3, 10):   '2026_05_13__05_02_23_NF_64_BS_4_LR_0.0002_EP_100_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_10_poisson_K_3_eis_v5',
-    (3, 20):   '2026_05_13__05_05_48_NF_64_BS_4_LR_0.0002_EP_100_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_20_poisson_K_3_eis_v5',
-    (3, 30):   '2026_05_13__05_06_25_NF_64_BS_4_LR_0.0002_EP_100_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_30_poisson_K_3_eis_v5',
+    (2, None): '2026_05_18__00_11_30_NF_64_BS_32_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_30_None_K_2_eis_v5_logzscale',
+    (3, None): '2026_05_17__18_55_12_NF_64_BS_32_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5_logzscale',
+    (4, None): '2026_05_18__00_12_21_NF_64_BS_32_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_30_None_K_4_eis_v5_logzscale',
+    (5, None): '2026_05_18__00_12_52_NF_64_BS_32_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_30_None_K_5_eis_v5_logzscale',
+    (3, 10):   '2026_05_18__13_36_20_NF_64_BS_32_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_10_poisson_K_3_eis_v5_logzscale',
+    (3, 20):   '2026_05_18__12_47_36_NF_64_BS_32_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_20_poisson_K_3_eis_v5_logzscale',
+    (3, 30):   '2026_05_18__12_47_36_NF_64_BS_32_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_30_poisson_K_3_eis_v5_logzscale',
 }
 
 # ==============================================================================

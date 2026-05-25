@@ -6,7 +6,8 @@ import torch, glob, os
 from slitless.measure import compare_ssim, nrmse
 from slitless.networks.unet import UNet
 from torch.utils.data import DataLoader
-from slitless.data_loader import (BasicDataset, param_inv_transform, 
+from slitless import data_loader as dl
+from slitless.data_loader import (BasicDataset, param_inv_transform,
     meas_inv_transform, param_transform, meas_transform)
 from slitless.plotting import barplot_group
 
@@ -24,6 +25,7 @@ def predict(net, meas):
 
 def net_loader(path):
     modpath = path+'/best_model.pth'
+    # modpath = path+'/nf_64_LR_0.0002_EP_200.pth'
 
     with open(path+'/summary.txt', 'r') as summary_text:
         lines = summary_text.readlines()

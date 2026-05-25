@@ -13,19 +13,61 @@ stats = np.load('/home/kamo/resources/slitless/data/eis_data/datasets/dset_v5/no
 WAVELENGTH = 195.117937907451
 SPEEDOFLIGHT = 299792.458
 
-def meas_transform(meas, stats=stats):
-    return meas/6000
-    # return meas/stats['int_max']
-def meas_inv_transform(meas, stats=stats):
-    return meas*6000
-    # return meas*stats['int_max']
-def param_transform(params, stats=stats):
-    params[0] /= 6000
+# Normalization mode for intensity AND measurement channels. The two are kept
+# in lockstep because a U-Net's input/output scaling are tightly coupled — a
+# model trained with log-zscored intensity expects log-zscored measurements.
+#   'linear'     — divide by 6000 (legacy).
+#   'log_zscore' — z-score of log(x + LOG_EPS); requires int_log_mean/std and
+#                  meas_log_mean/std in norm_stats.npy (see
+#                  scripts/update_v5_log_stats.py).
+# Vel/width are always z-scored (their distributions are signed and tight).
+INT_NORMALIZATION = 'log_zscore'
+LOG_EPS = 1.0  # must match the eps used when computing the log stats
+
+def _log(x, eps=LOG_EPS):
+    return torch.log(x + eps) if torch.is_tensor(x) else np.log(x + eps)
+
+def _exp(x):
+    return torch.exp(x) if torch.is_tensor(x) else np.exp(x)
+
+def meas_transform(meas, mode=None, stats=stats):
+    mode = INT_NORMALIZATION if mode is None else mode
+    if mode == 'linear':
+        return meas/6000
+    elif mode == 'log_zscore':
+        return (_log(meas) - stats['meas_log_mean']) / stats['meas_log_std']
+    raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
+
+def meas_inv_transform(meas, mode=None, stats=stats):
+    mode = INT_NORMALIZATION if mode is None else mode
+    if mode == 'linear':
+        return meas*6000
+    elif mode == 'log_zscore':
+        return _exp(meas * stats['meas_log_std'] + stats['meas_log_mean']) - LOG_EPS
+    raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
+
+def param_transform(params, mode=None, stats=stats):
+    mode = INT_NORMALIZATION if mode is None else mode
+    if mode == 'linear':
+        params[0] = params[0] / 6000
+    elif mode == 'log_zscore':
+        params[0] = (_log(params[0]) - stats['int_log_mean']) / stats['int_log_std']
+    else:
+        raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
     params[1] = (params[1] - stats['vel_mean']) / stats['vel_std']
     params[2] = (params[2] - stats['width_mean']) / stats['width_std']
     return params
-def param_inv_transform(params, w_kms=False, stats=stats):
-    params[...,0,:,:] *= 6000
+
+def param_inv_transform(params, w_kms=False, mode=None, stats=stats):
+    mode = INT_NORMALIZATION if mode is None else mode
+    if mode == 'linear':
+        params[...,0,:,:] = params[...,0,:,:] * 6000
+    elif mode == 'log_zscore':
+        params[...,0,:,:] = _exp(
+            params[...,0,:,:] * stats['int_log_std'] + stats['int_log_mean']
+        ) - LOG_EPS
+    else:
+        raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
     params[...,1,:,:] = stats['vel_std'] * params[...,1,:,:] + stats['vel_mean']
     params[...,2,:,:] = stats['width_std'] * params[...,2,:,:] + stats['width_mean']
     if w_kms: # conversion from A to km/s
@@ -36,7 +78,6 @@ class BasicDataset(Dataset):
     def __init__(self, data_dir, fold='train', transform=None,
         target_transform=None, dbsnr=None, noise_model=None, numdetectors=3):
         self.data_dir = data_dir
-        self.data = []
         self.train = False
         self.val = False
         self.transform = transform
@@ -57,11 +98,18 @@ class BasicDataset(Dataset):
 
         self.files = glob.glob(self.task_dir+'/data*.npy')
         self.files.sort()
+        # Stack into two contiguous arrays (instead of a list of N tuples) so
+        # DataLoader workers share memory cleanly via copy-on-write — Python
+        # refcounts touching per-sample tuples otherwise break COW and balloon
+        # memory across many workers.
+        meas_list, params_list = [], []
         for file in self.files:
             data = np.load(file, allow_pickle=True).item()
-            params = np.stack([data['int'], data['vel'], data['width']])
-            meas = np.stack([data['meas_0'], data['meas_-1'], data['meas_1'], data['meas_-2'], data['meas_2']])[:numdetectors]
-            self.data.append((meas, params))
+            params_list.append(np.stack([data['int'], data['vel'], data['width']]))
+            meas_list.append(np.stack([data['meas_0'], data['meas_-1'],
+                data['meas_1'], data['meas_-2'], data['meas_2']])[:numdetectors])
+        self.meas = np.stack(meas_list).astype(np.float32)      # (N, K, H, W)
+        self.params = np.stack(params_list).astype(np.float32)  # (N, 3, H, W)
 
         self.transform = transform
         self.target_transform = target_transform
@@ -70,16 +118,23 @@ class BasicDataset(Dataset):
         return len(self.files)
 
     def __getitem__(self, idx):
-        meas, params = self.data[idx]
+        # Copy so the in-place transforms below don't mutate the shared base
+        # arrays — critical when DataLoader uses persistent_workers=True.
+        meas = self.meas[idx].copy()
+        params = self.params[idx].copy()
+
+        # Noise must be applied in the raw photon-count domain (Poisson is
+        # ill-defined on negative/normalized values), so we noise first then
+        # transform. Under linear scaling this is mathematically equivalent
+        # to the previous transform-then-noise ordering.
+        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None,
+            noise_model=self.noise_model)
 
         if self.transform is not None:
             meas = self.transform(meas)
 
         if self.target_transform is not None:
             params = self.target_transform(params)
-
-        meas = add_noise(meas, dbsnr=self.dbsnr, no_noise=self.dbsnr==None,
-            noise_model=self.noise_model)
 
         return meas, params
 
