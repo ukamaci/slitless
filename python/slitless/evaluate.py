@@ -435,7 +435,7 @@ def eval_snrlist(dbsnr_list, noise_model, fold, data_dir, net):
     rmses_l = []
     for dbsnr in dbsnr_list:
         print(dbsnr)
-        dset = dsetter(data_dir=data_dir, noise_model=noise_model, fold=fold, dbsnr=dbsnr, numdetectors=net.in_channels)
+        dset = dsetter(data_dir=data_dir, noise_model=noise_model, fold=fold, dbsnr=dbsnr, numdetectors=getattr(net, 'in_channels', getattr(net, 'channels', 3)))
         dloader = DataLoader(dset, batch_size=32, shuffle=True, num_workers=8)
 
         ssims=[]
