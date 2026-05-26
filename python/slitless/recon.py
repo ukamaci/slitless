@@ -1125,22 +1125,25 @@ def scipy_solver_parallel(
     losses = []
     return rec, losses
 
-def _worker_scipy_col2(x0, meas_slice, mask_slice, lam_i, lam_v, lam_w, 
+def _worker_scipy_col2(x0, meas_slice, mask_slice, lam_i, lam_v, lam_w,
                        pixelated, spectral_orders, OPTIMIZER, maxiter, DATA_FIDELITY,
-                       bg_proj_matrix, ratio_i2, ratio_bkg):
+                       bg_proj_matrix, ratio_i2, ratio_bkg, lamdim=21):
+
+    def _tomo_proj(intensity, doppler, linewidth, mask):
+        dc = datacube_generator(
+            np.stack([intensity * mask, doppler, linewidth]),
+            pixelated=pixelated, lamdim=lamdim
+        )
+        return forward_op_tomo_3d(dc, orders=spectral_orders)
 
     def obj_ls_local(x, meas, mask, lam_i, lam_v, lam_w):
         aa, bb = meas.shape[1:]
-        
+
         int1, vel1, wid1, int2, vel2, wid2, bkg = np.reshape(x, (7,aa,bb))
-            
-        proj1 = forward_op(int1, vel1, wid1,
-            pixelated=pixelated, mask=mask,
-            spectral_orders=spectral_orders)
-            
-        proj2 = forward_op(int2, vel2, wid2,
-            pixelated=pixelated, mask=mask,
-            spectral_orders=spectral_orders)
+
+        proj1 = _tomo_proj(int1, vel1, wid1, mask)
+
+        proj2 = _tomo_proj(int2, vel2, wid2, mask)
         
         # Mask the background parameter before projecting to respect valid spatial bounds
         proj_bg = np.einsum('oij,jk->oik', bg_proj_matrix, bkg * mask)
@@ -1242,7 +1245,7 @@ def scipy_solver_parallel2(
         tasks.append((
             x0, meas[:,:,[i]], mask[:,[i]], lam_i, lam_v, lam_w,
             imager.pixelated, imager.spectral_orders, OPTIMIZER, maxiter, DATA_FIDELITY,
-            bg_proj_matrix, ratio_i2, ratio_bkg
+            bg_proj_matrix, ratio_i2, ratio_bkg, len(bg_shape_norm)
         ))
 
     results = Parallel(n_jobs=n_jobs, verbose=10)(
