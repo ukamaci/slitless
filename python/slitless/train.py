@@ -1,5 +1,5 @@
 import torch
-import sys, os, logging, time, glob
+import sys, os, logging, time
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
@@ -8,14 +8,15 @@ from tqdm import tqdm
 import datetime
 
 from slitless import data_loader as dl
-from slitless import data_loader as dl
 from slitless.data_loader import (BasicDataset, OntheflyDataset,
     meas_inv_transform, meas_transform, param_transform)
 from slitless.networks.unet import UNet
+from denoising_diffusion_pytorch import Unet as DiffusionUnet
 from slitless.measure import nrmse, nmse_torch, combine_losses, cycle_loss, compare_ssim
 from slitless.common import outch_adjuster
 import numpy as np
 import matplotlib.pyplot as plt
+from functools import partial
 from slitless.evaluate import plot_recons, plot_val_stats, eval_snrlist, meanest_errcalc
 from slitless.plotting import barplot_group
 
@@ -29,6 +30,8 @@ def train_net(net,
             criterion,
             path
 ):
+    if not hasattr(net, 'outch_type'):
+        net.outch_type = 'all'
 
     train_loss_over_epochs = []
     val_loss_over_epochs = []
@@ -38,13 +41,6 @@ def train_net(net,
     val_rmse_over_epochs = []
     best_valloss = 1e6
     modnum = 5  # log/val every N epochs
-
-    # AMP only helps on Volta+ (compute capability ≥7.0) which has real fp16
-    # tensor cores. On Pascal (e.g. TITAN Xp, cc 6.1) autocast is pure overhead.
-    use_amp = (device.type == 'cuda'
-               and torch.cuda.get_device_capability(device)[0] >= 7)
-    logging.info(f'AMP enabled: {use_amp}')
-    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     for epoch in tqdm(range(epochs)):  # loop over the dataset multiple times
 
@@ -62,13 +58,10 @@ def train_net(net,
             true_outputs = data[1].to(device=device, dtype=torch.float, non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
-
-            with torch.amp.autocast('cuda', enabled=use_amp):
-                outputs = net(inputs)
-                loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            outputs = net(inputs)
+            loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
+            loss.backward()
+            optimizer.step()
 
             running_loss += loss.item()
             last_inputs, last_true_outputs = inputs, true_outputs  # for cheap per-modnum train metric
@@ -94,7 +87,7 @@ def train_net(net,
                 inputs = data[0].to(device=device, dtype=torch.float, non_blocking=True)
                 true_outputs = data[1].to(device=device, dtype=torch.float, non_blocking=True)
 
-                with torch.no_grad(), torch.amp.autocast('cuda', enabled=use_amp):
+                with torch.no_grad():
                     outputs = net(inputs)
                     loss = criterion(truth=true_outputs, out=outputs, meas=inputs)
 
@@ -151,18 +144,22 @@ if __name__ == '__main__':
     LOAD = False
     otf = None # on the fly trainset generation 
     loaded_model_path = '../results/saved/2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5/best_model.pth'
-    # dataset_path = glob.glob('../../data/datasets/dset8_imagenet_50000/')[0]
-    dataset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
-    testset_path = glob.glob('../../data/eis_data/datasets/dset_v5/data/')[0]
-    dbsnr = 10
-    noise_model = 'poisson'
-    # noise_model = None
+    # MODEL = 'unet'      # 'unet' for slitless UNet, 'diffusion_unet' for NCSN architecture
+    MODEL = 'diffusion_unet'      # 'unet' for slitless UNet, 'diffusion_unet' for NCSN architecture
+    DSET = 'dset_v6'  # change this one line to switch datasets
+    dset_root = f'../../data/eis_data/datasets/{DSET}'
+    dataset_path = f'{dset_root}/data/'
+    testset_path = f'{dset_root}/data/'
+    dset_stats = np.load(f'{dset_root}/norm_stats.npy', allow_pickle=True).item()
+    dbsnr = 100
+    # noise_model = 'poisson'
+    noise_model = None
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-    name = f'{now}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
+    name = f'{now}_{MODEL}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
     if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
-    name += '_eis_v5_logzscale'
+    name += f'_{DSET}_logzscale'
     os.mkdir('../results/saved/'+name)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -176,9 +173,11 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    trainset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
-    valset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='val', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
-    testset = BasicDataset(data_dir=testset_path, transform=meas_transform, target_transform=param_transform, fold='test', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    _meas_tf  = partial(meas_transform,  stats=dset_stats)
+    _param_tf = partial(param_transform, stats=dset_stats)
+    trainset = BasicDataset(data_dir=dataset_path, transform=_meas_tf, target_transform=_param_tf, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    valset   = BasicDataset(data_dir=dataset_path, transform=_meas_tf, target_transform=_param_tf, fold='val',   dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
+    testset  = BasicDataset(data_dir=testset_path, transform=_meas_tf, target_transform=_param_tf, fold='test',  dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
     loader_kw = dict(num_workers=4, persistent_workers=True, pin_memory=True)
     trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, **loader_kw)
     valloader = DataLoader(valset, batch_size=64, shuffle=True, **loader_kw)
@@ -201,15 +200,27 @@ if __name__ == '__main__':
     ssim_cnst_test, rmse_cnst_test, mae_cnst_test = meanest_errcalc(
         trainmeans, testloader)
 
-    net = UNet(
-        in_channels=numdetectors,
-        out_channels=out_channels,
-        numlayers=numlayers,
-        outch_type=OUTCH,
-        start_filters=NUM_FILT,
-        bilinear=BILINEAR,
-        ksizes=ksizes,
-        residual=False).to(device)
+    if MODEL == 'unet':
+        net = UNet(
+            in_channels=numdetectors,
+            out_channels=out_channels,
+            numlayers=numlayers,
+            outch_type=OUTCH,
+            start_filters=NUM_FILT,
+            bilinear=BILINEAR,
+            ksizes=ksizes,
+            residual=False).to(device)
+    elif MODEL == 'diffusion_unet':
+        net = DiffusionUnet(
+            dim=NUM_FILT,
+            channels=numdetectors,
+            out_dim=out_channels,
+            dim_mults=(1, 2, 4, 8),
+            flash_attn=False,
+        ).to(device)
+        net.outch_type = OUTCH
+        _fwd = net.forward
+        net.forward = lambda x: _fwd(x, torch.zeros(x.shape[0], device=x.device))
 
     if LOAD:
         net.load_state_dict(torch.load(loaded_model_path))
