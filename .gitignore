@@ -26,3 +26,8 @@ build/
 .env
 .env.*
 .envrc
+docs/uq_proposal.*
+docs/uq_refs.bib
+docs/icassp26_submitted.tex
+python/scripts/apj25_old.tex
+python/scripts/apj25.tex
