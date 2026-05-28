@@ -55,14 +55,15 @@ def net_loader(path):
 
 
 def load_model_stats(model_path):
-    """Load norm_stats for a trained model from its summary.txt (Norm Stats Path field)."""
+    """Load norm_stats for a trained model, derived from the Dataset Path in its summary.txt."""
     summary_path = os.path.join(model_path, 'summary.txt')
     with open(summary_path) as f:
         lines = f.readlines()
-    matches = [l for l in lines if 'Norm Stats Path' in l]
+    matches = [l for l in lines if 'Dataset Path' in l]
     if not matches:
-        raise ValueError(f"'Norm Stats Path' not found in {summary_path}; re-train or pass stats manually")
-    stats_path = matches[0].split('= ')[-1].strip()
+        raise ValueError(f"'Dataset Path' not found in {summary_path}")
+    dataset_path = matches[0].split('= ')[-1].strip()
+    stats_path = os.path.normpath(os.path.join(dataset_path, '..', 'norm_stats.npy'))
     return np.load(stats_path, allow_pickle=True).item()
 
 def plot_recons_gd(*,meas, truth, recon, savedir):

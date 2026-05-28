@@ -28,7 +28,9 @@ def train_net(net,
             epochs,
             optimizer,
             criterion,
-            path
+            save_dir,
+            start_epoch=0,
+            prev_best_valloss=1e6,
 ):
     if not hasattr(net, 'outch_type'):
         net.outch_type = 'all'
@@ -39,10 +41,11 @@ def train_net(net,
     val_ssim_over_epochs = []
     train_rmse_over_epochs = []
     val_rmse_over_epochs = []
-    best_valloss = 1e6
+    best_valloss = prev_best_valloss
     modnum = 5  # log/val every N epochs
 
     for epoch in tqdm(range(epochs)):  # loop over the dataset multiple times
+        abs_epoch = start_epoch + epoch  # 0-indexed absolute epoch
 
         # if onthefly dataloading is active, then read the parameters from otf
         # and create the next trainset
@@ -67,9 +70,9 @@ def train_net(net,
             last_inputs, last_true_outputs = inputs, true_outputs  # for cheap per-modnum train metric
 
         running_loss /= len(trainloader)
-        logging.info('[%d] Train loss: %.7f' % (epoch + 1, running_loss))
+        logging.info('[%d] Train loss: %.7f' % (abs_epoch + 1, running_loss))
 
-        if (epoch+1)%modnum==0:
+        if (abs_epoch+1)%modnum==0:
             net.eval()
             # Single-batch train SSIM/RMSE indicator (full-epoch averaging
             # would re-traverse the loader; this is enough to track the
@@ -108,7 +111,7 @@ def train_net(net,
 
             if running_valloss < best_valloss:
                 best_valloss = running_valloss*1
-                torch.save(net.state_dict(), f'../results/saved/{name}/best_model.pth')
+                torch.save(net.state_dict(), os.path.join(save_dir, 'best_model.pth'))
 
             train_loss_over_epochs.append(running_loss)
             val_loss_over_epochs.append(running_valloss)
@@ -117,8 +120,21 @@ def train_net(net,
             train_rmse_over_epochs.append(running_rmse_train)
             val_rmse_over_epochs.append(running_rmse_val)
 
-    return (train_loss_over_epochs, val_loss_over_epochs, 
-    np.array(train_ssim_over_epochs), np.array(val_ssim_over_epochs), 
+            torch.save({
+                'epoch': abs_epoch + 1,
+                'model_state_dict': net.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_valloss': best_valloss,
+                'train_loss_over_epochs': train_loss_over_epochs,
+                'val_loss_over_epochs': val_loss_over_epochs,
+                'train_ssim_over_epochs': train_ssim_over_epochs,
+                'val_ssim_over_epochs': val_ssim_over_epochs,
+                'train_rmse_over_epochs': train_rmse_over_epochs,
+                'val_rmse_over_epochs': val_rmse_over_epochs,
+            }, os.path.join(save_dir, 'checkpoint.pth'))
+
+    return (train_loss_over_epochs, val_loss_over_epochs,
+    np.array(train_ssim_over_epochs), np.array(val_ssim_over_epochs),
     np.array(train_rmse_over_epochs), np.array(val_rmse_over_epochs), net)
 
 if __name__ == '__main__':
@@ -160,11 +176,12 @@ if __name__ == '__main__':
     if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
     name += f'_{DSET}_logzscale'
-    os.mkdir('../results/saved/'+name)
+    save_dir = os.path.abspath(f'../results/saved/{name}')
+    os.mkdir(save_dir)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     logger.handlers = [] # clean up the previous handlers to avoid problems
-    fh = logging.FileHandler(f'../results/saved/{name}/output.log')
+    fh = logging.FileHandler(os.path.join(save_dir, 'output.log'))
     formatter = logging.Formatter('%(asctime)s; %(message)s','%Y-%m-%d %H:%M:%S')
     fh.setFormatter(formatter)
     logger.addHandler(fh)
@@ -275,17 +292,16 @@ if __name__ == '__main__':
     '\n############## Data Parameters ############## \n',
     f'Num of Tranining Images = {len(trainset)*5 if otf else len(trainset)} \n',
     f'Num of Validation Images = {len(valset)} \n',
-    f'Dataset Path = {dataset_path} \n',
-    f'Norm Stats Path = {os.path.abspath(os.path.join(dset_root, "norm_stats.npy"))} \n',
+    f'Dataset Path = {os.path.abspath(dataset_path)} \n',
     ]
 
-    with open(f'../results/saved/{name}/summary.txt', 'w') as file:
+    with open(os.path.join(save_dir, 'summary.txt'), 'w') as file:
         for line in training_summary:
             file.write(line)
 
     try:
         t0 = time.time()
-        (trainloss, valloss, train_ssim_eps, val_ssim_eps, train_rmse_eps, 
+        (trainloss, valloss, train_ssim_eps, val_ssim_eps, train_rmse_eps,
         val_rmse_eps, net) = train_net(net=net,
                   device=device,
                   trainloader=trainloader,
@@ -294,15 +310,15 @@ if __name__ == '__main__':
                   epochs=EPOCHS,
                   optimizer=optimizer,
                   criterion=criterion,
-                  path=name
+                  save_dir=save_dir,
                   )
         train_time = datetime.timedelta(seconds=int(time.time() - t0))
 
     except KeyboardInterrupt:
-        torch.save(net.state_dict(), f'../results/saved/{name}/INTERRUPTED.pth')
+        torch.save(net.state_dict(), os.path.join(save_dir, 'INTERRUPTED.pth'))
         sys.exit(0)
 
-    torch.save(net.state_dict(), f'../results/saved/{name}/nf_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}.pth')
+    torch.save(net.state_dict(), os.path.join(save_dir, f'nf_{NUM_FILT}_LR_{LR}_EP_{EPOCHS}.pth'))
 
     plt.figure()
     plt.semilogy(trainloss, label='Training Loss')
@@ -310,7 +326,7 @@ if __name__ == '__main__':
     plt.title('Convergence Plot')
     plt.grid(which='both', axis='both')
     plt.legend()
-    plt.savefig(f'../results/saved/{name}/convergence_plot.png')
+    plt.savefig(os.path.join(save_dir, 'convergence_plot.png'))
     plt.close()
 
     plt.figure()
@@ -323,7 +339,7 @@ if __name__ == '__main__':
     plt.plot(val_ssim_eps[:,2], marker='$v$', color='lime')
     plt.grid(which='both', axis='both')
     plt.legend()
-    plt.savefig(f'../results/saved/{name}/ssims_vs_epochs.png')
+    plt.savefig(os.path.join(save_dir, 'ssims_vs_epochs.png'))
     plt.close()
 
     plt.figure()
@@ -336,13 +352,13 @@ if __name__ == '__main__':
     plt.plot(val_rmse_eps[:,2], marker='$v$', color='lime')
     plt.grid(which='both', axis='both')
     plt.legend()
-    plt.savefig(f'../results/saved/{name}/rmses_vs_epochs.png')
+    plt.savefig(os.path.join(save_dir, 'rmses_vs_epochs.png'))
     plt.close()
 
-    net.load_state_dict(torch.load(f'../results/saved/{name}/best_model.pth'))
+    net.load_state_dict(torch.load(os.path.join(save_dir, 'best_model.pth')))
     net.eval()
 
-    savedir = f'../results/saved/{name}/'
+    savedir = save_dir + '/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir, stats=dset_stats)
     if net.outch_type == 'all':
         scatter_hexbin(yvec, outvec, method_name=name, save=True,
@@ -419,7 +435,7 @@ if __name__ == '__main__':
     'Minimum Training Loss: {:.7f} \n\n'.format(np.min(trainloss)),
     ]
 
-    with open(f'../results/saved/{name}/summary.txt', 'w') as file:
+    with open(os.path.join(save_dir, 'summary.txt'), 'w') as file:
         for line in training_summary:
             file.write(line)
 
@@ -470,6 +486,6 @@ if __name__ == '__main__':
         '\n############## Comments ############## \n'
     ]
 
-    with open(f'../results/saved/{name}/summary.txt', 'w') as file:
+    with open(os.path.join(save_dir, 'summary.txt'), 'w') as file:
         for line in training_summary:
             file.write(line)
