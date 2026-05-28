@@ -6,7 +6,7 @@ from slitless.forward import (Source, Imager, forward_op_torch, forward_op,
     forward_op_tomo_3d, forward_op_tomo_3d_transpose, add_noise, gauss_pix,
     datacube_generator, tomomtx_gen)
 from slitless.measure import cycle_loss, compare_ssim, tv_loss
-from slitless.evaluate import net_loader, predict
+from slitless.evaluate import net_loader, predict, load_model_stats
 from slitless.data_loader import meas_transform as unet_meas_transform, param_inv_transform
 from scipy.optimize import minimize, curve_fit
 from scipy.ndimage import convolve
@@ -78,18 +78,13 @@ class Reconstructor():
         return self.recons
     
     def meas_transform(self):
-        if self.solver.__name__=='nn_solver':
-            self.imager.meas3dar = unet_meas_transform(
-                self.imager.meas3dar.copy()*self.intenscale
-            )
-        
+        pass  # each solver handles its own normalisation internally
+
     def recon_inv_transform(self, recon):
         if self.solver.__name__=='nn_solver':
+            # recon is already in physical space — nn_solver denormalises internally
             return self.imager.topix(
-                Source(
-                    param3d=param_inv_transform(recon, w_kms=False),
-                    pix=False
-                )
+                Source(param3d=recon, pix=False)
             ).param3d
         else:
             return recon
@@ -967,12 +962,14 @@ def nn_solver(
         model_path='2023_01_19__17_18_44_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_35_dssize_full'
 ):
     foldpath = glob.glob('/home/kamo/resources/slitless/python/results/saved/'+'*'+model_path+'*')[0]+'/'
+    stats = load_model_stats(foldpath)
     net = net_loader(foldpath)
     net.eval()
-    recon = predict(net, imager.meas3dar.copy())
-
-    losses = []
-    return recon, losses
+    intenscale = getattr(imager, 'intenscale', 1)
+    meas_norm = unet_meas_transform(imager.meas3dar.copy() * intenscale, stats=stats)
+    recon_norm = predict(net, meas_norm)
+    recon = param_inv_transform(recon_norm, w_kms=False, stats=stats)
+    return recon, []
 
 def scipy_solver(
     imager=None,

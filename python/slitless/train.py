@@ -263,7 +263,7 @@ if __name__ == '__main__':
     f'Number of Detectors = {numdetectors} \n',
     f'Noise Model / dbsnr = {noise_model} / {dbsnr} \n',
     f'Output Channels = {OUTCH} \n',
-    f'Int Normalization = {dl.INT_NORMALIZATION} \n',
+    f'Int Normalization = log_zscore \n',
     '\n############## Optimization Parameters ############## \n',
     f'Optimizer = {OPTIMIZER} \n',
     f'Loss = {LOSS} \n',
@@ -276,6 +276,7 @@ if __name__ == '__main__':
     f'Num of Tranining Images = {len(trainset)*5 if otf else len(trainset)} \n',
     f'Num of Validation Images = {len(valset)} \n',
     f'Dataset Path = {dataset_path} \n',
+    f'Norm Stats Path = {os.path.abspath(os.path.join(dset_root, "norm_stats.npy"))} \n',
     ]
 
     with open(f'../results/saved/{name}/summary.txt', 'w') as file:
@@ -342,11 +343,11 @@ if __name__ == '__main__':
     net.eval()
 
     savedir = f'../results/saved/{name}/'
-    ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
+    ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir, stats=dset_stats)
     if net.outch_type == 'all':
         scatter_hexbin(yvec, outvec, method_name=name, save=True,
                        savepath=savedir+'hexbin_scatter.png', show=False)
-    plot_recons(net, testloader, numim=32, savedir=savedir+'figures/', denormalize=True)
+    plot_recons(net, testloader, numim=32, savedir=savedir+'figures/', denormalize=True, stats=dset_stats)
     dbsnr_l = [10,20,30,None]
     ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, noise_model=noise_model, fold='test', 
     data_dir=testset_path, net=net)

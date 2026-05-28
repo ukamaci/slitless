@@ -53,6 +53,18 @@ def net_loader(path):
     net.eval()
     return net
 
+
+def load_model_stats(model_path):
+    """Load norm_stats for a trained model from its summary.txt (Norm Stats Path field)."""
+    summary_path = os.path.join(model_path, 'summary.txt')
+    with open(summary_path) as f:
+        lines = f.readlines()
+    matches = [l for l in lines if 'Norm Stats Path' in l]
+    if not matches:
+        raise ValueError(f"'Norm Stats Path' not found in {summary_path}; re-train or pass stats manually")
+    stats_path = matches[0].split('= ')[-1].strip()
+    return np.load(stats_path, allow_pickle=True).item()
+
 def plot_recons_gd(*,meas, truth, recon, savedir):
     if not os.path.exists(savedir):
         os.mkdir(savedir)
@@ -115,7 +127,7 @@ def plot_recons_gd(*,meas, truth, recon, savedir):
         pass
 
 
-def plot_recons(net, valloader, numim, savedir, denormalize=False):
+def plot_recons(net, valloader, numim, savedir, denormalize=False, stats=None):
     if not os.path.exists(savedir):
         os.mkdir(savedir)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -129,9 +141,9 @@ def plot_recons(net, valloader, numim, savedir, denormalize=False):
     out = np.array(out.cpu())
     x = np.array(x.cpu())
     if denormalize:
-        out = param_inv_transform(out, w_kms=True)
-        y = param_inv_transform(y, w_kms=True)
-        x = meas_inv_transform(x)
+        out = param_inv_transform(out, w_kms=True, stats=stats)
+        y = param_inv_transform(y, w_kms=True, stats=stats)
+        x = meas_inv_transform(x, stats=stats)
     if not hasattr(net, 'outch_type'):
         net.outch_type = 'all'
 
@@ -319,7 +331,7 @@ def joint_plotter(truth, recon, savedir):
     except:
         pass
 
-def plot_val_stats(net, valloader, savedir):
+def plot_val_stats(net, valloader, savedir, stats=None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.eval()
 
@@ -349,9 +361,9 @@ def plot_val_stats(net, valloader, savedir):
         with torch.no_grad():
             outputs = net(inputs)
             outputs = np.array(outputs.cpu())
-            outputs = param_inv_transform(outputs, w_kms=True)
-            y1 = param_inv_transform(y1, w_kms=True)
-            inputs = meas_inv_transform(inputs)
+            outputs = param_inv_transform(outputs, w_kms=True, stats=stats)
+            y1 = param_inv_transform(y1, w_kms=True, stats=stats)
+            inputs = meas_inv_transform(inputs, stats=stats)
             ssim0 = compare_ssim(truth=y1, estimate=outputs)
             rmse0 = nrmse(truth=y1, estimate=outputs, normalization=None)
             ssims.extend(ssim0.squeeze())
@@ -440,6 +452,7 @@ def eval_snrlist(dbsnr_list, noise_model, fold, data_dir, net):
     for dbsnr in dbsnr_list:
         print(dbsnr)
         dset = dsetter(data_dir=data_dir, noise_model=noise_model, fold=fold, dbsnr=dbsnr, numdetectors=getattr(net, 'in_channels', getattr(net, 'channels', 3)))
+        dset_stats = dset.stats
         dloader = DataLoader(dset, batch_size=32, shuffle=True, num_workers=8)
 
         ssims=[]
@@ -468,8 +481,8 @@ def eval_snrlist(dbsnr_list, noise_model, fold, data_dir, net):
                 outputs = np.array(outputs.cpu())
                 ssim0 = compare_ssim(truth=y1, estimate=outputs)
                 if net.outch_type == 'all':
-                    out_phys = param_inv_transform(outputs.copy(), w_kms=True)
-                    y1_phys  = param_inv_transform(y1.copy(),      w_kms=True)
+                    out_phys = param_inv_transform(outputs.copy(), w_kms=True, stats=dset_stats)
+                    y1_phys  = param_inv_transform(y1.copy(),      w_kms=True, stats=dset_stats)
                     rmse0 = nrmse(truth=y1_phys, estimate=out_phys, normalization=None)
                 else:
                     rmse0 = nrmse(truth=y1, estimate=outputs, normalization=None)
@@ -501,18 +514,19 @@ if __name__ == '__main__':
     foldname0 = '2026_01_24__15_28_17_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_dssize_full'
     foldpath = glob.glob('../results/saved/'+foldname0)[0]+'/'
     net = net_loader(foldpath)
+    model_stats = load_model_stats(foldpath)
     dsetname='eistest64'
     # dataset_path = glob.glob(f'../../data/eis_data/{dsetname}/')[0]
     dataset_path = glob.glob('../../data/eis_data/datasets/dset_v4/data/')[0]
-    valset = BasicDataset(data_dir=dataset_path, transform=meas_transform, target_transform=param_transform, fold='val', dbsnr=None, noise_model=None, numdetectors=3)
+    valset = BasicDataset(data_dir=dataset_path, fold='val', dbsnr=None, noise_model=None, numdetectors=3)
     dataloader = DataLoader(valset, batch_size=32, shuffle=False, num_workers=8)
 
     savedir = foldpath
     # if not os.path.exists(savedir):
     #     os.mkdir(savedir)
 
-    ssims, rmses, yvec, outvec = plot_val_stats(net, dataloader, savedir)
-    # plot_recons(net, dataloader, 32, savedir+'figures/')
+    ssims, rmses, yvec, outvec = plot_val_stats(net, dataloader, savedir, stats=model_stats)
+    # plot_recons(net, dataloader, 32, savedir+'figures/', stats=model_stats)
 
     # dbsnr_l = [15,25,35,None]
 

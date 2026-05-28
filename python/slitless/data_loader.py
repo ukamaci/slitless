@@ -9,65 +9,61 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from multiprocessing import Pool
 
-stats = np.load('/home/kamo/resources/slitless/data/eis_data/datasets/dset_v5/norm_stats.npy', allow_pickle=True).item()
 WAVELENGTH = 195.117937907451
 SPEEDOFLIGHT = 299792.458
 
-# Normalization mode for intensity AND measurement channels. The two are kept
-# in lockstep because a U-Net's input/output scaling are tightly coupled — a
-# model trained with log-zscored intensity expects log-zscored measurements.
-#   'linear'     — divide by 6000 (legacy).
-#   'log_zscore' — z-score of log(x + LOG_EPS); requires int_log_mean/std and
-#                  meas_log_mean/std in norm_stats.npy (see
-#                  scripts/update_v5_log_stats.py).
-# Vel/width are always z-scored (their distributions are signed and tight).
-INT_NORMALIZATION = 'log_zscore'
-LOG_EPS = 1.0  # must match the eps used when computing the log stats
-
-def _log(x, eps=LOG_EPS):
+def _log(x, eps=1.0):
     return torch.log(x + eps) if torch.is_tensor(x) else np.log(x + eps)
 
 def _exp(x):
     return torch.exp(x) if torch.is_tensor(x) else np.exp(x)
 
-def meas_transform(meas, mode=None, stats=stats):
-    mode = INT_NORMALIZATION if mode is None else mode
+# mode='log_zscore': z-score of log(x + 1.0); requires norm_stats.npy keys
+#   int_log_mean/std, meas_log_mean/std (see scripts/update_v5_log_stats.py).
+# mode='linear': divide intensity by 6000 (legacy). Vel/width always z-scored.
+
+def meas_transform(meas, stats=None, mode='log_zscore'):
     if mode == 'linear':
         return meas/6000
     elif mode == 'log_zscore':
+        if stats is None:
+            raise ValueError("stats required for log_zscore mode")
         return (_log(meas) - stats['meas_log_mean']) / stats['meas_log_std']
-    raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
+    raise ValueError(f"Unknown mode: {mode!r}")
 
-def meas_inv_transform(meas, mode=None, stats=stats):
-    mode = INT_NORMALIZATION if mode is None else mode
+def meas_inv_transform(meas, stats=None, mode='log_zscore'):
     if mode == 'linear':
         return meas*6000
     elif mode == 'log_zscore':
-        return _exp(meas * stats['meas_log_std'] + stats['meas_log_mean']) - LOG_EPS
-    raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
+        if stats is None:
+            raise ValueError("stats required for log_zscore mode")
+        return _exp(meas * stats['meas_log_std'] + stats['meas_log_mean']) - 1.0
+    raise ValueError(f"Unknown mode: {mode!r}")
 
-def param_transform(params, mode=None, stats=stats):
-    mode = INT_NORMALIZATION if mode is None else mode
+def param_transform(params, stats=None, mode='log_zscore'):
+    if stats is None:
+        raise ValueError("stats required for param_transform")
     if mode == 'linear':
         params[0] = params[0] / 6000
     elif mode == 'log_zscore':
         params[0] = (_log(params[0]) - stats['int_log_mean']) / stats['int_log_std']
     else:
-        raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
+        raise ValueError(f"Unknown mode: {mode!r}")
     params[1] = (params[1] - stats['vel_mean']) / stats['vel_std']
     params[2] = (params[2] - stats['width_mean']) / stats['width_std']
     return params
 
-def param_inv_transform(params, w_kms=False, mode=None, stats=stats):
-    mode = INT_NORMALIZATION if mode is None else mode
+def param_inv_transform(params, w_kms=False, stats=None, mode='log_zscore'):
+    if stats is None:
+        raise ValueError("stats required for param_inv_transform")
     if mode == 'linear':
         params[...,0,:,:] = params[...,0,:,:] * 6000
     elif mode == 'log_zscore':
         params[...,0,:,:] = _exp(
             params[...,0,:,:] * stats['int_log_std'] + stats['int_log_mean']
-        ) - LOG_EPS
+        ) - 1.0
     else:
-        raise ValueError(f"Unknown INT_NORMALIZATION mode: {mode!r}")
+        raise ValueError(f"Unknown mode: {mode!r}")
     params[...,1,:,:] = stats['vel_std'] * params[...,1,:,:] + stats['vel_mean']
     params[...,2,:,:] = stats['width_std'] * params[...,2,:,:] + stats['width_mean']
     if w_kms: # conversion from A to km/s
@@ -85,6 +81,8 @@ class BasicDataset(Dataset):
         self.dbsnr = dbsnr
         self.noise_model = noise_model
         self.numdetectors = numdetectors
+        stats_path = os.path.normpath(os.path.join(data_dir, '..', 'norm_stats.npy'))
+        self.stats = np.load(stats_path, allow_pickle=True).item() if os.path.exists(stats_path) else None
 
         if fold == 'train':
             self.train = True
