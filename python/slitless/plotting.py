@@ -139,6 +139,71 @@ def generate_plus_cross(size=100, line_width=3, sigma=1):
     
     return arr
 
+def scatter_hexbin(true, rec, method_name='', save=False, savepath=None, show=True):
+    """
+    1x3 hexbin scatter plot (true vs estimated) for intensity, velocity, and line width.
+
+    Parameters
+    ----------
+    true : array-like, shape (3, N)
+        Flattened ground-truth values in physical units [erg/cm²/s/sr, km/s, km/s].
+    rec : array-like, shape (3, N)
+        Flattened reconstructed values in the same units.
+    method_name : str
+        Used as the figure suptitle.
+    save : bool
+    savepath : str or None
+        Full file path for saving. Required if save=True.
+    show : bool
+        Set to False for headless/pipeline use (e.g. during training).
+    """
+    import matplotlib
+    true = np.asarray(true)
+    rec  = np.asarray(rec)
+
+    param_names = ['Intensity', 'Velocity', 'Line Width']
+    param_units = [r'erg cm$^{-2}$ s$^{-1}$ sr$^{-1}$', r'km s$^{-1}$', r'km s$^{-1}$']
+
+    if save and not show:
+        matplotlib.use('Agg')
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    for col in range(3):
+        ax  = axes[col]
+        t   = true[col]
+        r   = rec[col]
+        lo  = np.percentile(t, 0.1)
+        hi  = np.percentile(t, 99.9)
+        hb  = ax.hexbin(t, r, gridsize=80, mincnt=1, cmap='viridis',
+                        extent=[lo, hi, lo, hi])
+        ax.plot([lo, hi], [lo, hi], 'k--', lw=1.5, alpha=0.8)
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
+        r_val = np.corrcoef(t, r)[0, 1]
+        ax.text(0.04, 0.95, f'r = {r_val:.3f}', transform=ax.transAxes,
+                fontsize=9, va='top', ha='left',
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+        ax.set_title(param_names[col], fontsize=13, fontweight='bold')
+        ax.set_xlabel(f'True [{param_units[col]}]', fontsize=9)
+        ax.set_ylabel(f'Estimated [{param_units[col]}]', fontsize=9)
+        fig.colorbar(hb, ax=ax, pad=0.02)
+
+    if method_name:
+        fig.suptitle(method_name, fontsize=13, y=1.02)
+    plt.tight_layout()
+    if save and savepath:
+        fig.savefig(savepath, transparent=True, dpi=300, bbox_inches='tight')
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+        try:
+            matplotlib.use('QtAgg')
+        except Exception:
+            pass
+    return fig
+
+
 def generate_horizontal_lines(size=100, num_lines=5, line_width=3, sigma=1):
     """
     Generates an array with equispaced horizontal lines.

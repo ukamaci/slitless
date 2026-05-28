@@ -174,21 +174,21 @@ def plot_recons(net, valloader, numim, savedir, denormalize=False):
         if net.outch_type == 'all':
             im=ax[2,0].imshow(out[i,0], cmap='hot')
             ax[2,0].set_title(
-                'Predicted Intensity\n SSIM={:.3f} - RMSE={:.3f}'.format(
+                'Predicted Intensity\n SSIM={:.3f} - RMSE={:.2e} erg/cm²/s/sr'.format(
                     ssims[i,0], rmses[i,0]
                 )
             )
             fig.colorbar(im, ax=ax[2,0])
             im=ax[2,1].imshow(out[i,1], cmap='seismic')
             ax[2,1].set_title(
-                'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
+                'Predicted Velocity\n SSIM={:.3f} - RMSE={:.2f} km/s'.format(
                     ssims[i,1], rmses[i,1]
                 )
             )
             fig.colorbar(im, ax=ax[2,1])
             im=ax[2,2].imshow(out[i,2], cmap='plasma')
             ax[2,2].set_title(
-                'Predicted Linewidth\n SSIM={:.3f} - RMSE={:.3f}'.format(
+                'Predicted Linewidth\n SSIM={:.3f} - RMSE={:.2f} km/s'.format(
                     ssims[i,2], rmses[i,2]
                 )
             )
@@ -196,7 +196,7 @@ def plot_recons(net, valloader, numim, savedir, denormalize=False):
         elif net.outch_type == 'int':
             im=ax[2,0].imshow(out[i,0], cmap='hot')
             ax[2,0].set_title(
-                'Predicted Intensity\n SSIM={:.3f} - RMSE={:.3f}'.format(
+                'Predicted Intensity\n SSIM={:.3f} - RMSE={:.2e} erg/cm²/s/sr'.format(
                     ssims[i], rmses[i]
                 )
             )
@@ -204,7 +204,7 @@ def plot_recons(net, valloader, numim, savedir, denormalize=False):
         elif net.outch_type == 'vel':
             im=ax[2,1].imshow(out[i,0], cmap='seismic')
             ax[2,1].set_title(
-                'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
+                'Predicted Velocity\n SSIM={:.3f} - RMSE={:.2f} km/s'.format(
                     ssims[i], rmses[i]
                 )
             )
@@ -212,7 +212,7 @@ def plot_recons(net, valloader, numim, savedir, denormalize=False):
         elif net.outch_type == 'width':
             im=ax[2,2].imshow(out[i,0], cmap='plasma')
             ax[2,2].set_title(
-                'Predicted Velocity\n SSIM={:.3f} - RMSE={:.3f}'.format(
+                'Predicted Linewidth\n SSIM={:.3f} - RMSE={:.2f} km/s'.format(
                     ssims[i], rmses[i]
                 )
             )
@@ -250,18 +250,18 @@ def stat_plotter(ssims, rmses, savedir):
 
     fig, ax = plt.subplots(1,3, figsize=(12.6,4.8))
     ax[0].hist(rmses[:,0], bins=20)
-    ax[0].set_title('Intensity RMSE\n Mean RMSE={:.3f}'.format(rmses[:,0].mean()))
-    ax[0].set_xlabel('RMSE')
+    ax[0].set_title('Intensity RMSE\n Mean={:.2e} erg/cm²/s/sr'.format(rmses[:,0].mean()))
+    ax[0].set_xlabel('RMSE [erg/cm²/s/sr]')
     ax[0].set_ylabel('Counts')
     ax[0].axvline(rmses[:,0].mean(), color='r')
     ax[1].hist(rmses[:,1], bins=20)
-    ax[1].set_title('Velocity RMSE\n Mean RMSE={:.3f}'.format(rmses[:,1].mean()))
-    ax[1].set_xlabel('RMSE')
+    ax[1].set_title('Velocity RMSE\n Mean={:.2f} km/s'.format(rmses[:,1].mean()))
+    ax[1].set_xlabel('RMSE [km/s]')
     ax[1].set_ylabel('Counts')
     ax[1].axvline(rmses[:,1].mean(), color='r')
     ax[2].hist(rmses[:,2], bins=20)
-    ax[2].set_title('Linewidth RMSE\n Mean RMSE={:.3f}'.format(rmses[:,2].mean()))
-    ax[2].set_xlabel('RMSE')
+    ax[2].set_title('Linewidth RMSE\n Mean={:.2f} km/s'.format(rmses[:,2].mean()))
+    ax[2].set_xlabel('RMSE [km/s]')
     ax[2].set_ylabel('Counts')
     ax[2].axvline(rmses[:,2].mean(), color='r')
     plt.tight_layout()
@@ -279,22 +279,22 @@ def joint_plotter(truth, recon, savedir):
     matplotlib.use('Agg')
     # fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], kind='hex', gridsize=100)
     fg=sns.jointplot(x=truth[0], y=recon[0]-truth[0], xlim=[0,5e3], ylim=[-2e2,2e2], kind='hex', gridsize=100)
-    fg.figure.suptitle('Intensity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[0], est_std[0]))
-    fg.set_axis_labels('Intensity', 'Intensity Error')
+    fg.figure.suptitle('Intensity Error Distribution\n Bias: {:.2e} erg/cm²/s/sr - Error Std: {:.2e} erg/cm²/s/sr'.format(est_bias[0], est_std[0]))
+    fg.set_axis_labels('Intensity [erg/cm²/s/sr]', 'Intensity Error [erg/cm²/s/sr]')
     fg.figure.tight_layout()
     plt.grid(which='both', axis='both')
     plt.savefig(savedir+'intensity_stats.png', dpi=300)
     # fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', gridsize=100)
     fg=sns.jointplot(x=truth[1], y=recon[1]-truth[1], kind='hex', xlim=[-15,15], ylim=[-15,15], gridsize=300)
-    fg.figure.suptitle('Velocity Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
-    fg.set_axis_labels('Velocity', 'Velocity Error')
+    fg.figure.suptitle('Velocity Error Distribution\n Bias: {:.2f} km/s - Error Std: {:.2f} km/s'.format(est_bias[1], est_std[1]))
+    fg.set_axis_labels('Velocity [km/s]', 'Velocity Error [km/s]')
     fg.figure.tight_layout()
     plt.grid(which='both', axis='both')
     plt.savefig(savedir+'velocity_stats.png', dpi=300)
     # fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], kind='hex', gridsize=100)
     fg=sns.jointplot(x=truth[2], y=recon[2]-truth[2], xlim=[35,60], ylim=[-8,8], kind='hex', gridsize=100)
-    fg.figure.suptitle('Linewidth Error Distribution\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
-    fg.set_axis_labels('Linewidth', 'Linewidth Error')
+    fg.figure.suptitle('Linewidth Error Distribution\n Bias: {:.2f} km/s - Error Std: {:.2f} km/s'.format(est_bias[2], est_std[2]))
+    fg.set_axis_labels('Linewidth [km/s]', 'Linewidth Error [km/s]')
     fg.figure.tight_layout()
     plt.grid(which='both', axis='both')
     plt.savefig(savedir+'linewidth_stats.png', dpi=300)
@@ -302,14 +302,14 @@ def joint_plotter(truth, recon, savedir):
     # Cross dependence of vel&width errors on intensity
     fg=sns.jointplot(x=truth[0], y=recon[1]-truth[1], xlim=[0,5e3], ylim=[-8,8], kind='hex', gridsize=100)
     # fg=sns.jointplot(x=truth[0], y=recon[1]-truth[1], kind='hex', ylim=[-0.4,0.4], gridsize=100)
-    fg.figure.suptitle('Velocity Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[1], est_std[1]))
-    fg.set_axis_labels('Intensity', 'Velocity Error')
+    fg.figure.suptitle('Velocity Error vs Intensity\n Bias: {:.2f} km/s - Error Std: {:.2f} km/s'.format(est_bias[1], est_std[1]))
+    fg.set_axis_labels('Intensity [erg/cm²/s/sr]', 'Velocity Error [km/s]')
     fg.figure.tight_layout()
     plt.savefig(savedir+'velocity_stats_vs_inten.png', dpi=300)
     fg=sns.jointplot(x=truth[0], y=recon[2]-truth[2], xlim=[0,5e3], ylim=[-8,8], kind='hex', gridsize=100)
     # fg=sns.jointplot(x=truth[0], y=recon[2]-truth[2], kind='hex', ylim=[-0.5,0.5], gridsize=100)
-    fg.figure.suptitle('Linewidth Error vs Intensity\n Bias: {:.4f} - Error Std: {:.4f}'.format(est_bias[2], est_std[2]))
-    fg.set_axis_labels('Intensity', 'Linewidth Error')
+    fg.figure.suptitle('Linewidth Error vs Intensity\n Bias: {:.2f} km/s - Error Std: {:.2f} km/s'.format(est_bias[2], est_std[2]))
+    fg.set_axis_labels('Intensity [erg/cm²/s/sr]', 'Linewidth Error [km/s]')
     fg.figure.tight_layout()
     plt.savefig(savedir+'linewidth_stats_vs_inten.png', dpi=300)
 
@@ -383,10 +383,14 @@ def plot_val_stats(net, valloader, savedir):
         plt.tight_layout()
         plt.savefig(savedir+'ssim_stats.png', dpi=300)
 
+        _unit = {'Intensity': 'erg/cm²/s/sr', 'Velocity': 'km/s', 'Linewidth': 'km/s'}
+        _fmt  = {'Intensity': '{:.2e}',        'Velocity': '{:.2f}',  'Linewidth': '{:.2f}'}
+        unit = _unit.get(title_str, '')
+        fmt  = _fmt.get(title_str, '{:.3f}')
         plt.figure()
         plt.hist(rmses, bins=20)
-        plt.title('{} RMSE\n Mean RMSE={:.3f}'.format(title_str, rmses.mean()))
-        plt.xlabel('RMSE')
+        plt.title('{} RMSE\n Mean={} {}'.format(title_str, fmt.format(rmses.mean()), unit))
+        plt.xlabel('RMSE [{}]'.format(unit))
         plt.ylabel('Counts')
         plt.axvline(rmses.mean(), color='r')
         plt.tight_layout()
@@ -463,7 +467,12 @@ def eval_snrlist(dbsnr_list, noise_model, fold, data_dir, net):
                 outputs = net(inputs)
                 outputs = np.array(outputs.cpu())
                 ssim0 = compare_ssim(truth=y1, estimate=outputs)
-                rmse0 = nrmse(truth=y1, estimate=outputs, normalization=None)
+                if net.outch_type == 'all':
+                    out_phys = param_inv_transform(outputs.copy(), w_kms=True)
+                    y1_phys  = param_inv_transform(y1.copy(),      w_kms=True)
+                    rmse0 = nrmse(truth=y1_phys, estimate=out_phys, normalization=None)
+                else:
+                    rmse0 = nrmse(truth=y1, estimate=outputs, normalization=None)
                 ssims.extend(ssim0)
                 rmses.extend(rmse0)
         

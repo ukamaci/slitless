@@ -18,7 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from functools import partial
 from slitless.evaluate import plot_recons, plot_val_stats, eval_snrlist, meanest_errcalc
-from slitless.plotting import barplot_group
+from slitless.plotting import barplot_group, scatter_hexbin
 
 def train_net(net,
             device,
@@ -343,6 +343,9 @@ if __name__ == '__main__':
 
     savedir = f'../results/saved/{name}/'
     ssims, rmses, yvec, outvec = plot_val_stats(net, testloader, savedir)
+    if net.outch_type == 'all':
+        scatter_hexbin(yvec, outvec, method_name=name, save=True,
+                       savepath=savedir+'hexbin_scatter.png', show=False)
     plot_recons(net, testloader, numim=32, savedir=savedir+'figures/', denormalize=True)
     dbsnr_l = [10,20,30,None]
     ssims_l, rmses_l = eval_snrlist(dbsnr_list=dbsnr_l, noise_model=noise_model, fold='test', 
@@ -393,17 +396,17 @@ if __name__ == '__main__':
         ssim_cnst_val[1], ssim_cnst_val[2]),
     'SSIM Test: i:{:.3f}   v:{:.3f}    w:{:.3f} \n'.format(ssim_cnst_test[0], 
         ssim_cnst_test[1], ssim_cnst_test[2]),
-    'RMSE Train: i:{:.4f}   v:{:.4f}    w:{:.4f} \n'.format(rmse_cnst_train[0], 
+    'RMSE Train (normalized): i:{:.4f}   v:{:.4f}    w:{:.4f} \n'.format(rmse_cnst_train[0],
         rmse_cnst_train[1], rmse_cnst_train[2]),
-    'RMSE Val: i:{:.4f}   v:{:.4f}    w:{:.4f} \n'.format(rmse_cnst_val[0], 
+    'RMSE Val (normalized): i:{:.4f}   v:{:.4f}    w:{:.4f} \n'.format(rmse_cnst_val[0],
         rmse_cnst_val[1], rmse_cnst_val[2]),
-    'RMSE Test: i:{:.4f}   v:{:.4f}    w:{:.4f} \n'.format(rmse_cnst_test[0], 
+    'RMSE Test (normalized): i:{:.4f}   v:{:.4f}    w:{:.4f} \n'.format(rmse_cnst_test[0],
         rmse_cnst_test[1], rmse_cnst_test[2]),
-    'MAE Train: i:{:.3f}   v:{:.3f}    w:{:.3f} \n'.format(mae_cnst_train[0], 
+    'MAE Train (normalized): i:{:.3f}   v:{:.3f}    w:{:.3f} \n'.format(mae_cnst_train[0],
         mae_cnst_train[1], mae_cnst_train[2]),
-    'MAE Val: i:{:.3f}   v:{:.3f}    w:{:.3f} \n'.format(mae_cnst_val[0], 
+    'MAE Val (normalized): i:{:.3f}   v:{:.3f}    w:{:.3f} \n'.format(mae_cnst_val[0],
         mae_cnst_val[1], mae_cnst_val[2]),
-    'MAE Test: i:{:.3f}   v:{:.3f}    w:{:.3f} \n'.format(mae_cnst_test[0], 
+    'MAE Test (normalized): i:{:.3f}   v:{:.3f}    w:{:.3f} \n'.format(mae_cnst_test[0],
         mae_cnst_test[1], mae_cnst_test[2]),
     ]
 
@@ -422,41 +425,41 @@ if __name__ == '__main__':
     if net.outch_type == 'all':
         training_summary += [
             'SSIM Mean+/-Std: i: {:.3f}+/-{:.3f}   v: {:.3f}+/-{:.3f}   w: {:.3f}+/-{:.3f} \n'.format(
-                ssims[:,0].mean(), ssims[:,0].std(), ssims[:,1].mean(), ssims[:,1].std(), 
+                ssims[:,0].mean(), ssims[:,0].std(), ssims[:,1].mean(), ssims[:,1].std(),
                 ssims[:,2].mean(), ssims[:,2].std()),
-            'RMSE Mean+/-Std: i: {:.4f}+/-{:.4f}   v: {:.4f}+/-{:.4f}   w: {:.4f}+/-{:.4f} \n'.format(
-                rmses[:,0].mean(), rmses[:,0].std(), rmses[:,1].mean(), rmses[:,1].std(), 
+            'RMSE Mean+/-Std [erg/cm2/s/sr, km/s, km/s]: i: {:.2e}+/-{:.2e}   v: {:.2f}+/-{:.2f}   w: {:.2f}+/-{:.2f} \n'.format(
+                rmses[:,0].mean(), rmses[:,0].std(), rmses[:,1].mean(), rmses[:,1].std(),
                 rmses[:,2].mean(), rmses[:,2].std()),
-            'Bias+/-Std: i: {:.4f}+/-{:.4f}   v: {:.4f}+/-{:.4f}   w: {:.4f}+/-{:.4f} \n'.format(
-                est_bias[0], est_std[0], rmses[:,1].mean(), rmses[:,1].std(), 
-                rmses[:,2].mean(), rmses[:,2].std())
+            'Bias+/-Std [erg/cm2/s/sr, km/s, km/s]: i: {:.2e}+/-{:.2e}   v: {:.2f}+/-{:.2f}   w: {:.2f}+/-{:.2f} \n'.format(
+                est_bias[0], est_std[0], est_bias[1], est_std[1],
+                est_bias[2], est_std[2])
         ]
     elif net.outch_type == 'int':
         training_summary += [
             'Intensity SSIM Mean: {:.3f} \n'.format((ssims.mean())),
             'Intensity SSIM Std: {:.3f} \n'.format((ssims.std())),
-            'Intensity RMSE Mean: {:.4f} \n'.format((rmses.mean())),
-            'Intensity RMSE Std: {:.4f} \n'.format((rmses.std())),
-            'Intensity Bias: {:.4f} \n'.format((est_bias[0])),
-            'Intensity Error Std: {:.4f} \n\n'.format((est_std[0])),
+            'Intensity RMSE Mean [erg/cm2/s/sr]: {:.2e} \n'.format((rmses.mean())),
+            'Intensity RMSE Std [erg/cm2/s/sr]: {:.2e} \n'.format((rmses.std())),
+            'Intensity Bias [erg/cm2/s/sr]: {:.2e} \n'.format((est_bias[0])),
+            'Intensity Error Std [erg/cm2/s/sr]: {:.2e} \n\n'.format((est_std[0])),
         ]
     elif net.outch_type == 'vel':
         training_summary += [
             'Velocity SSIM Mean: {:.3f} \n'.format((ssims.mean())),
             'Velocity SSIM Std: {:.3f} \n'.format((ssims.std())),
-            'Velocity RMSE Mean: {:.4f} \n'.format((rmses.mean())),
-            'Velocity RMSE Std: {:.4f} \n'.format((rmses.std())),
-            'Velocity Bias: {:.4f} \n'.format((est_bias[0])),
-            'Velocity Error Std: {:.4f} \n\n'.format((est_std[0])),
+            'Velocity RMSE Mean [km/s]: {:.2f} \n'.format((rmses.mean())),
+            'Velocity RMSE Std [km/s]: {:.2f} \n'.format((rmses.std())),
+            'Velocity Bias [km/s]: {:.2f} \n'.format((est_bias[0])),
+            'Velocity Error Std [km/s]: {:.2f} \n\n'.format((est_std[0])),
         ]
     elif net.outch_type == 'width':
         training_summary += [
             'Linewidth SSIM Mean: {:.3f} \n'.format((ssims.mean())),
             'Linewidth SSIM Std: {:.3f} \n'.format((ssims.std())),
-            'Linewidth RMSE Mean: {:.4f} \n'.format((rmses.mean())),
-            'Linewidth RMSE Std: {:.4f} \n'.format((rmses.std())),
-            'Linewidth Bias: {:.4f} \n'.format((est_bias[0])),
-            'Linewidth Error Std: {:.4f} \n\n'.format((est_std[0])),
+            'Linewidth RMSE Mean [km/s]: {:.2f} \n'.format((rmses.mean())),
+            'Linewidth RMSE Std [km/s]: {:.2f} \n'.format((rmses.std())),
+            'Linewidth Bias [km/s]: {:.2f} \n'.format((est_bias[0])),
+            'Linewidth Error Std [km/s]: {:.2f} \n\n'.format((est_std[0])),
         ]
 
     training_summary += [
