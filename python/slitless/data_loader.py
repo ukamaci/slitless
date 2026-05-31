@@ -28,6 +28,11 @@ def meas_transform(meas, stats=None, mode='log_zscore'):
     elif mode == 'log_zscore':
         if stats is None:
             raise ValueError("stats required for log_zscore mode")
+        # Noisy measurements can fall below the physical floor (clean meas_min)
+        # and even below -1, which would make log(meas+1) NaN. Clamp to meas_min
+        # first; a no-op at high SNR where clean meas >= meas_min.
+        floor = stats['meas_min']
+        meas = meas.clamp(min=floor) if torch.is_tensor(meas) else np.maximum(meas, floor)
         return (_log(meas) - stats['meas_log_mean']) / stats['meas_log_std']
     raise ValueError(f"Unknown mode: {mode!r}")
 
