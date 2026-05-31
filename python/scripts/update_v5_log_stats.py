@@ -1,10 +1,9 @@
 """
 Add log-space normalization statistics for intensity and measurements to
-dset_v5/norm_stats.npy (used by data_loader.py when INT_NORM/MEAS_NORM is
-set to 'log_zscore').
+dset_v5/norm_stats.npy (used by data_loader.py in 'log_zscore' mode).
 
 Computes mean/std of log(x + LOG_EPS) over the entire training split.
-LOG_EPS must match data_loader.LOG_EPS.
+LOG_EPS must match the eps default in meas_transform/param_transform (1.0).
 """
 import os, glob
 import numpy as np
@@ -12,7 +11,7 @@ from tqdm import tqdm
 
 STATS_PATH = '/home/kamo/resources/slitless/data/eis_data/datasets/dset_v5/norm_stats.npy'
 TRAIN_DIR = '/home/kamo/resources/slitless/data/eis_data/datasets/dset_v5/data/train/'
-LOG_EPS = 1.0  # must match data_loader.LOG_EPS
+LOG_EPS = 1.0  # must match eps default in meas_transform/param_transform
 
 def main():
     stats = np.load(STATS_PATH, allow_pickle=True).item()

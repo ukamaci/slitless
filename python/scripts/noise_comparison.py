@@ -17,7 +17,7 @@ Imgr = Imager(
     mid_wavelength=195.119,
 )
 
-gaussian_dbsnrs = [25, 50, 100, None]
+gaussian_dbsnrs = [20, 30, 50, None]
 poisson_dbsnrs  = [10, 20, 30, None]
 
 def simulate(dbsnr, noise_model):

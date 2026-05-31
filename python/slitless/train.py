@@ -144,7 +144,7 @@ if __name__ == '__main__':
     numlayers = 4
     LR = 2e-4
     # LR= 0.01
-    EPOCHS = 200
+    EPOCHS = 100
     BATCH_SIZE = 32
     BILINEAR = True
     ksizes = [(3,1)]
@@ -167,9 +167,9 @@ if __name__ == '__main__':
     dataset_path = f'{dset_root}/data/'
     testset_path = f'{dset_root}/data/'
     dset_stats = np.load(f'{dset_root}/norm_stats.npy', allow_pickle=True).item()
-    dbsnr = 100
-    # noise_model = 'poisson'
-    noise_model = None
+    dbsnr = 30
+    noise_model = 'gaussian'
+    # noise_model = None
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
     name = f'{now}_{MODEL}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
