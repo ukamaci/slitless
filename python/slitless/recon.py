@@ -53,18 +53,12 @@ class Reconstructor():
                 noise_model=self.imager.noise_model
             )
 
-            # meas_transform is a no-op for non-nn solvers (see its body); for
-            # nn_solver it must run regardless of simulate_meas, otherwise the
-            # U-Net is fed raw photon counts instead of the normalized values
-            # it was trained on.
-            self.meas_transform()
             t0 = time.time()
             recon, loss = self.solver(
                 imager = self.imager,
                 **self.solver_params
             )
             t1 = time.time()
-            recon = self.recon_inv_transform(recon)
 
             times.append(t1-t0)
             recons.append(recon)
@@ -77,17 +71,6 @@ class Reconstructor():
 
         return self.recons
     
-    def meas_transform(self):
-        pass  # each solver handles its own normalisation internally
-
-    def recon_inv_transform(self, recon):
-        if self.solver.__name__=='nn_solver':
-            # recon is already in physical space — nn_solver denormalises internally
-            return self.imager.topix(
-                Source(param3d=recon, pix=False)
-            ).param3d
-        else:
-            return recon
 
 class Reconstructor_Multi():
     def __init__(
@@ -969,6 +952,7 @@ def nn_solver(
     meas_norm = unet_meas_transform(imager.meas3dar.copy() * intenscale, stats=stats)
     recon_norm = predict(net, meas_norm)
     recon = param_inv_transform(recon_norm, w_kms=False, stats=stats)
+    recon = imager.topix(Source(param3d=recon, pix=False)).param3d
     return recon, []
 
 def scipy_solver(
@@ -1257,7 +1241,7 @@ def scipy_solver_parallel2(
     losses = []
     return rec, losses
 
-def diffusion_solver(
+def dps_solver(
     imager=None,
     model_path='model-10.pt',
     grad_scale=[1,1,1],
@@ -1265,29 +1249,33 @@ def diffusion_solver(
 ):
     meas = imager.meas3dar.copy()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    trpath='/home/kamo/resources/denoising-diffusion-pytorch/training_results/'
 
-    channels = len(imager.spectral_orders)
     model = Unet(
-        # channels=3,
-        channels = channels,
+        channels = 3,            # output params: intensity, velocity, width
         dim = 64,
         dim_mults = (1, 2, 4, 8),
         flash_attn = True
     ).to(device)
-    # data = torch.load('/home/kamo/resources/denoising-diffusion-pytorch/results/model-10.pt', map_location=device, weights_only=True)
-    # data = torch.load('/home/kamo/resources/denoising-diffusion-pytorch/results_lr_5e-6/'+model_path, map_location=device, weights_only=True)
-    data = torch.load('/home/kamo/resources/denoising-diffusion-pytorch/results/'+model_path, map_location=device, weights_only=True)
+    data = torch.load(trpath+'run_all_lr_1e-4_cosine_b32_logz/'+model_path, map_location=device, weights_only=True)
     adapted_dict = {k[6:]: v for k, v in data['model'].items() if k.startswith('model.')}
     model.load_state_dict(adapted_dict)
     model.eval()
 
+    # The model (and thus unnormalize) works in physical units: velocity in km/s
+    # and width in Å. forward_op_torch expects pixel units, so convert via the
+    # imager's topix before simulating measurements. topix(array=True) is
+    # differentiable, so the DPS guidance gradient flows through it correctly.
     def forward_op(x, device=None):
+        x_pix = imager.topix(x, array=True)
         return forward_op_torch(
-        true_intensity=x[:,0], 
-        true_doppler=x[:,1], 
-        true_linewidth=x[:,2], 
-        device=device
-    )
+            true_intensity=x_pix[:,0],
+            true_doppler=x_pix[:,1],
+            true_linewidth=x_pix[:,2],
+            spectral_orders=imager.spectral_orders,
+            pixelated=imager.pixelated,
+            device=device,
+        )
 
     # Initialize the diffusion process
     diffusion = GaussianDiffusion(
@@ -1298,18 +1286,77 @@ def diffusion_solver(
         recon = True,
         measurement=torch.tensor(meas).to(device),
         beta_schedule='cosine',
-        grad_scale=torch.tensor(grad_scale).to(device),
+        clip_denoised=(-5., 5.),    # match training; in log-zscore space [-1,1] is far too tight
+        grad_scale=torch.as_tensor(grad_scale, dtype=torch.float32, device=device).flatten(),
         forward_op=forward_op,
         device=device,
         mode='all'
     )
 
     # Generate new samples
-    samples, norms, grad_norms, rmses = diffusion.sample(batch_size=num_samples)
+    samples, norms, grad_norms, rmses, ch_grad_norms = diffusion.sample(batch_size=num_samples)
 
     recon = samples.mean(dim=0).detach().cpu().numpy()
+    recon = imager.topix(Source(param3d=recon, pix=False)).param3d
 
     return recon, norms
+
+def conddiff_solver(
+    imager=None,
+    # run_name='run_all_lr1e-4_cosine_b32_conditional_logz',
+    run_name='2026_05_31__04_12_50_all_lr_1e-4_cosine_b32_numdetectors_3_global_logz_conditional_Gaussian_20',
+    model_path='model-10.pt',
+    num_samples=5
+):
+    """Conditional diffusion reconstruction.
+
+    Unlike dps_solver, the measurement enters the network directly as
+    conditioning (no DPS measurement-guidance / grad_scale). The model's
+    normalization handles cond normalization internally (normalize_cond).
+    """
+    meas = imager.meas3dar.copy()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    trpath='/home/kamo/resources/denoising-diffusion-pytorch/training_results/'
+
+    cond_channels = len(imager.spectral_orders)
+    model = Unet(
+        channels = 3,                    # output params: intensity, velocity, width
+        cond_channels = cond_channels,   # conditioning measurement orders
+        dim = 64,
+        dim_mults = (1, 2, 4, 8),
+        flash_attn = True
+    ).to(device)
+    data = torch.load(trpath+run_name+'/'+model_path, map_location=device, weights_only=True)
+    adapted_dict = {k[6:]: v for k, v in data['model'].items() if k.startswith('model.')}
+    model.load_state_dict(adapted_dict)
+    model.eval()
+
+    diffusion = GaussianDiffusion(
+        model,
+        image_size = 64,
+        timesteps = 1000,           # number of steps
+        sampling_timesteps = 250,   # ddim; matches training, faster than full ancestral
+        beta_schedule='cosine',
+        clip_denoised=(-5., 5.),    # match training
+        device=device,
+        mode='all'
+    )
+
+    # cond is the raw measurement (normalized internally by the model's
+    # normalization). Its batch dim must match the sample batch size.
+    cond = torch.as_tensor(meas, dtype=torch.float32, device=device)[None].repeat(num_samples, 1, 1, 1)
+
+    # Conditional sampling needs no gradients. The library's @inference_mode
+    # decorators are disabled to allow DPS guidance (dps_solver), so without
+    # this guard the autograd graph would accumulate across all sampling steps
+    # and exhaust GPU memory.
+    with torch.no_grad():
+        samples = diffusion.sample(batch_size=num_samples, cond=cond)
+
+    recon = samples.mean(dim=0).detach().cpu().numpy()
+    recon = imager.topix(Source(param3d=recon, pix=False)).param3d
+
+    return recon, []
 
 ''' Encapsulated the *comparison_testbed_multi.py* into a function. '''
 def comparison_test_multi(path_data, data, savepath, single_param4dar=False, save=False, numdetectors=3, dbsnr=50, 
@@ -1393,7 +1440,7 @@ def comparison_test_multi(path_data, data, savepath, single_param4dar=False, sav
             imager=Imgr,
             param4dar=param4dar,
             pix=True,
-            solver=diffusion_solver,
+            solver=dps_solver,
             **kwargs
         )
     # SMART

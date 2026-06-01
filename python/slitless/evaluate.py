@@ -5,6 +5,7 @@ import seaborn as sns
 import torch, glob, os
 from slitless.measure import compare_ssim, nrmse
 from slitless.networks.unet import UNet
+from denoising_diffusion_pytorch import Unet as DiffusionUnet
 from torch.utils.data import DataLoader
 from slitless import data_loader as dl
 from slitless.data_loader import (BasicDataset, param_inv_transform,
@@ -34,19 +35,40 @@ def net_loader(path):
     in_channels = int(parser('Number of Detectors'))
     outch = parser('Output Channels')
     out_channels = 3 if outch=='all' else 1
-    ksizes=eval(parser('Kernel Size'))
-    bilinear=eval(parser('Bilinear Interpolation'))
-    numlayers = len(ksizes)
-    numlayers = 4 if numlayers==1 else numlayers
-    net = UNet(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        numlayers=numlayers,
-        outch_type=outch,
-        start_filters=start_filters,
-        bilinear=bilinear,
-        ksizes=ksizes,
-        residual=False)
+
+    # Determine the architecture. Newer runs record it in summary.txt
+    # ('Model Type = ...'); older runs don't, so fall back to the folder name
+    # (train.py derives the run name from MODEL, so it always encodes the type).
+    try:
+        model_type = parser('Model Type')
+    except IndexError:
+        model_type = 'diffusion_unet' if 'diffusion_unet' in path else 'unet'
+
+    if model_type == 'diffusion_unet':
+        net = DiffusionUnet(
+            dim=start_filters,
+            channels=in_channels,
+            out_dim=out_channels,
+            dim_mults=(1, 2, 4, 8),
+            flash_attn=False,
+        )
+        net.outch_type = outch
+        _fwd = net.forward
+        net.forward = lambda x: _fwd(x, torch.zeros(x.shape[0], device=x.device))
+    else:
+        ksizes=eval(parser('Kernel Size'))
+        bilinear=eval(parser('Bilinear Interpolation'))
+        numlayers = len(ksizes)
+        numlayers = 4 if numlayers==1 else numlayers
+        net = UNet(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            numlayers=numlayers,
+            outch_type=outch,
+            start_filters=start_filters,
+            bilinear=bilinear,
+            ksizes=ksizes,
+            residual=False)
     net.load_state_dict(torch.load(modpath))
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.to(device)

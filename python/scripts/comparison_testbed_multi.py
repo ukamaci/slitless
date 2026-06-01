@@ -1,7 +1,7 @@
 from slitless.forward import Source, Imager, forward_op, datacube_generator
 from slitless.plotting import uiuc_im
 from slitless.recon import (smart, smart2, smart2_twostage, grad_descent_solver, scipy_solver, scipy_solver_parallel, scipy_solver_parallel2, tomoinv,
-    Reconstructor, Reconstructor_Multi, nn_solver, diffusion_solver)
+    Reconstructor, Reconstructor_Multi, nn_solver, dps_solver, conddiff_solver)
 import numpy as np
 import datetime, pickle, shutil, os
 import matplotlib.pyplot as plt
@@ -18,7 +18,7 @@ path_data = '/home/kamo/resources/slitless/data/datasets/baseline/'
 # data='eis_5_64x64.npy' # 64x64 EIS images
 # data='diff_samples.npy' # 5 of 64x64 Diffusion generated images
 # data = 'eis_train_5_64x64.npy' # 5 of 64x64 EIS dataset train images
-data_file='eis_test_100_dsetv5.npy' # 64x64 EIS images
+data_file='eis_val_10_dsetv6.npy' # 64x64 EIS images
 # data='eis_train_5_dsetv4.npy' # 64x64 EIS images
 # data='eis_test_5_dsetv4.npy' # 64x64 EIS images
 # data='eis_val_5_dsetv4_old.npy' # 64x64 EIS images
@@ -34,9 +34,9 @@ data_file='eis_test_100_dsetv5.npy' # 64x64 EIS images
 
 # Loading script for dset_v4 data
 data = np.load(path_data+data_file, allow_pickle=True).item()
-# param4dar, meas4dar = data['param3d'], data['meas']
-# param4dar, meas4dar = data['param3d'], data['meas']
-param4dar, meas4dar = data['param3d'], data['meas_damped']
+param4dar, meas4dar = data['param3d'], data['meas']
+# param4dar, meas4dar = data['param3d'][[5]], data['meas'][[5]]
+# param4dar, meas4dar = data['param3d'], data['meas_damped']
 # param4dar, meas4dar = data['param3d'][[3]], data['meas_damped'][[3]]
 source_pix = False
 intenscaling = False
@@ -46,10 +46,10 @@ savepath = '/home/kamo/resources/slitless/python/results/recons/'
 save = False
 M = param4dar.shape[-1]
 numdetectors = 3
-dbsnr = 10
-noise_model=None # Noise-free measurements
+dbsnr = 20
+# noise_model=None # Noise-free measurements
 # noise_model='poisson'
-# noise_model='gaussian'
+noise_model='gaussian'
 if meas4dar is not None:
     meas4dar = meas4dar[:,:numdetectors]
 
@@ -132,30 +132,37 @@ Imgr = Imager(pixelated=True, dbsnr=dbsnr, avg_count=dbsnr**2, noise_model=noise
 #     LR=5e-2
 # )
 
-# U-Net
-Rec = Reconstructor_Multi(
-    imager=Imgr,
-    meas4dar=meas4dar,
-    param4dar=param4dar,
-    pix=source_pix,
-    solver=nn_solver,
-    intenscaling=intenscaling,
-    # model_path='dbsnr_50_poisson_K_3_dssize_full',
-    model_path='2026_05_15__01_06_51_NF_64_BS_4_LR_0.0002_EP_200_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_30_None_K_3_eis_v5'
-    # model_path='2026_05_11__17_26_39_NF_64_BS_4_LR_0.0002_EP_400_KSIZE_(3, 1)_NMSE_LOSS_ADAM_all_dbsnr_100_None_K_3_eis_v5'
-    # model_path='dbsnr_15_poisson_K_3_eis_v4'
-)
+# # U-Net
+# Rec = Reconstructor_Multi(
+#     imager=Imgr,
+#     meas4dar=meas4dar,
+#     param4dar=param4dar,
+#     pix=source_pix,
+#     solver=nn_solver,
+#     intenscaling=intenscaling,
+#     # model_path='2026_05_28__00_09_08_diffusion_unet_NF_64_BS_32_LR_0.0002_EP_50_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_100_None_K_3_dset_v6_logzscale'
+#     model_path='2026_05_31__13_07_15_diffusion_unet_NF_64_BS_32_LR_0.0002_EP_100_KSIZE_(3, 1)_MSE_LOSS_ADAM_all_dbsnr_20_gaussian_K_3_dset_v6_logzscale'
+# )
 
 # # Diffusion DPS
 # Rec = Reconstructor_Multi(
 #     imager=Imgr,
 #     param4dar=param4dar,
 #     pix=source_pix,
-#     solver=diffusion_solver,
+#     solver=dps_solver,
 #     model_path='model-10.pt',
-#     grad_scale=[1,1,1],
+#     grad_scale=0.5,
 #     num_samples=10
 # )
+
+Rec = Reconstructor_Multi(
+    imager=Imgr,
+    param4dar=param4dar,
+    pix=source_pix,
+    solver=conddiff_solver,
+    model_path='model-10.pt',
+    num_samples=10,
+)
 
 # # SMART
 # Rec = Reconstructor_Multi(

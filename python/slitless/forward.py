@@ -608,27 +608,50 @@ class Imager():
             self.meas3dar_nn = meas
         self.intenscale=intenscale
 
-    def topix(self, source):
+    def topix(self, source, width_unit='A', array=False):
         """
-        Takes as input a Source object which has the physical units of 
+        Takes as input a Source object which has the physical units of
         velocity and line width, and creates another Source object as an attribute
         of the Imager, which has these parameters in the pixel units.
-        """
-        assert source.pix == False, "Source object is already in pixel dimensions"
 
-        rest_cen = getattr(source, 'rest_wavelength', 195.117937907451)
-        # Absolute wavelength of the shifted line
-        actual_wave = rest_cen * (1 + source.vel / SPEED_OF_LIGHT)
-        # Pixel shift relative to the array's central wavelength
-        vel_pix = (actual_wave - getattr(self, 'mid_wavelength', 195.119)) / self.dispersion_scale
-        self.srpix = Source(
-            inten=source.inten/self.intenscale,
-            vel=vel_pix,
-            width=source.width/self.dispersion_scale,
-            rest_wavelength=rest_cen,
-            pix=True
-        )
-        return self.srpix
+        When array=True, `source` is instead a (..., 3, H, W) numpy array or
+        torch tensor of physical params (intensity, velocity in km/s, width in
+        `width_unit`) and the converted pixel-unit array/tensor is returned
+        directly. This path is differentiable for tensors (affine ops only), so
+        it can sit inside an autograd graph (e.g. the DPS guidance forward op).
+        It mirrors frompix(array=True) and is the inverse of it.
+        """
+        if array == False:
+            assert source.pix == False, "Source object is already in pixel dimensions"
+
+            rest_cen = getattr(source, 'rest_wavelength', 195.117937907451)
+            # Absolute wavelength of the shifted line
+            actual_wave = rest_cen * (1 + source.vel / SPEED_OF_LIGHT)
+            # Pixel shift relative to the array's central wavelength
+            vel_pix = (actual_wave - getattr(self, 'mid_wavelength', 195.119)) / self.dispersion_scale
+            self.srpix = Source(
+                inten=source.inten/self.intenscale,
+                vel=vel_pix,
+                width=source.width/self.dispersion_scale,
+                rest_wavelength=rest_cen,
+                pix=True
+            )
+            return self.srpix
+        else:
+            out = source.clone() if type(source)==torch.Tensor else source.copy()
+            out[...,0,:,:] /= self.intenscale
+
+            wave_cen = getattr(self, 'mid_wavelength', 195.119)
+            rest_cen = getattr(self.srpix, 'rest_wavelength', 195.117937907451) if hasattr(self, 'srpix') else 195.117937907451
+
+            actual_wave = rest_cen * (1 + out[...,1,:,:] / SPEED_OF_LIGHT)
+            out[...,1,:,:] = (actual_wave - wave_cen) / self.dispersion_scale
+
+            if width_unit == 'km/s':
+                out[...,2,:,:] *= rest_cen / SPEED_OF_LIGHT  # km/s -> A
+            out[...,2,:,:] /= self.dispersion_scale
+
+            return out
 
     def frompix(self, source, width_unit='A', array=False):
         """
