@@ -75,9 +75,15 @@ def param_inv_transform(params, w_kms=False, stats=None, mode='log_zscore'):
         params[...,2,:,:] *= SPEEDOFLIGHT/WAVELENGTH
     return params
 
+# Fixed seed for the dsize dataset-size ablation. Shared with the
+# denoising_diffusion_pytorch repo so a given dsize selects the identical
+# training subset in both codebases.
+DSIZE_SEED = 42
+
 class BasicDataset(Dataset):
     def __init__(self, data_dir, fold='train', transform=None,
-        target_transform=None, dbsnr=None, noise_model=None, numdetectors=3):
+        target_transform=None, dbsnr=None, noise_model=None, numdetectors=3,
+        dsize=1.0):
         self.data_dir = data_dir
         self.train = False
         self.val = False
@@ -101,6 +107,15 @@ class BasicDataset(Dataset):
 
         self.files = glob.glob(self.task_dir+'/data*.npy')
         self.files.sort()
+        # Dataset-size ablation: keep a fixed-seed random subset of the *training*
+        # files. Sorting above makes the order canonical (matching the ddpm repo's
+        # EISDataset), so the same dsize/seed picks the identical samples in both
+        # repos, and subsets are nested (quarter ⊂ half).
+        if self.train and dsize < 1.0:
+            rng = np.random.default_rng(DSIZE_SEED)
+            n_keep = round(dsize * len(self.files))
+            keep = sorted(rng.permutation(len(self.files))[:n_keep].tolist())
+            self.files = [self.files[i] for i in keep]
         # Stack into two contiguous arrays (instead of a list of N tuples) so
         # DataLoader workers share memory cleanly via copy-on-write — Python
         # refcounts touching per-sample tuples otherwise break COW and balloon
