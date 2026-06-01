@@ -170,15 +170,16 @@ if __name__ == '__main__':
     dbsnr = 30
     noise_model = 'gaussian'
     # noise_model = None
-    dsize = 1.0  # fraction of the training set to keep (dataset-size ablation); 1.0 = full set
+    partno = 1   # which partition to train on (1..partnum); dataset-size / no-leakage ablation
+    partnum = 1  # split the training set into this many leakage-free partitions; 1 = full set
 
     now = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
     name = f'{now}_{MODEL}_NF_{NUM_FILT}_BS_{BATCH_SIZE}_LR_{LR}_EP_{EPOCHS}_KSIZE_{str(ksizes[0])}_{LOSS}_LOSS_{OPTIMIZER}_{OUTCH}_dbsnr_{dbsnr}_{noise_model}_K_{numdetectors}'
     if (not CYC_ONLY) & CYC_LOSS:
         name += f'_CYC_LOSS_lam_{cyc_lam}'
     name += f'_{DSET}_logzscale'
-    if dsize < 1.0:
-        name += f'_dsize_{dsize:.2f}'
+    if partnum > 1:
+        name += f'_dsize_{partno}v{partnum}'
     save_dir = os.path.abspath(f'../results/saved/{name}')
     os.mkdir(save_dir)
     logger = logging.getLogger()
@@ -195,7 +196,7 @@ if __name__ == '__main__':
 
     _meas_tf  = partial(meas_transform,  stats=dset_stats)
     _param_tf = partial(param_transform, stats=dset_stats)
-    trainset = BasicDataset(data_dir=dataset_path, transform=_meas_tf, target_transform=_param_tf, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors, dsize=dsize)
+    trainset = BasicDataset(data_dir=dataset_path, transform=_meas_tf, target_transform=_param_tf, fold='train', dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors, partno=partno, partnum=partnum)
     valset   = BasicDataset(data_dir=dataset_path, transform=_meas_tf, target_transform=_param_tf, fold='val',   dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
     testset  = BasicDataset(data_dir=testset_path, transform=_meas_tf, target_transform=_param_tf, fold='test',  dbsnr=dbsnr, noise_model=noise_model, numdetectors=numdetectors)
     loader_kw = dict(num_workers=4, persistent_workers=True, pin_memory=True)
@@ -294,7 +295,7 @@ if __name__ == '__main__':
     f'Num Epochs = {EPOCHS} \n',
     f'Training Batch Size = {BATCH_SIZE} \n',
     '\n############## Data Parameters ############## \n',
-    f'Dataset Size Fraction (dsize) = {dsize} \n',
+    f'Training Partition (partno v partnum) = {partno} v {partnum} \n',
     f'Num of Tranining Images = {len(trainset)*5 if otf else len(trainset)} \n',
     f'Num of Validation Images = {len(valset)} \n',
     f'Dataset Path = {os.path.abspath(dataset_path)} \n',
